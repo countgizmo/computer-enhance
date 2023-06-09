@@ -21,7 +21,7 @@ const encoding = struct {
     bits_enc: []const u8,
 };
 
-const decoded_sizes = struct {
+const DecodedSizes = struct {
     opcode: u8 = 0,
     d_bit: u8 = 0,
     w_bit: u8 = 0,
@@ -40,7 +40,7 @@ fn charToDigit(ch: u8) u8 {
     return std.fmt.charToDigit(ch, 10) catch 0;
 }
 
-fn populateSize(sizes: *decoded_sizes, key_buffer: []u8, value_buffer: u8) void {
+fn populateSize(sizes: *DecodedSizes, key_buffer: []u8, value_buffer: u8) void {
     if (std.mem.startsWith(u8, key_buffer, "opcode")) {
         sizes.opcode = charToDigit(value_buffer);
     } else if (std.mem.startsWith(u8, key_buffer, "disp-lo")) {
@@ -60,8 +60,8 @@ fn populateSize(sizes: *decoded_sizes, key_buffer: []u8, value_buffer: u8) void 
     }
 }
 
-fn decodeBits(bits: []const u8) decoded_sizes {
-    var result: decoded_sizes = .{};
+fn decodeBits(bits: []const u8) DecodedSizes {
+    var result: DecodedSizes = .{};
     var key_buffer: [8]u8 = undefined;
     var value_buffer: u8 = undefined;
     var i: usize = 0;
@@ -95,14 +95,32 @@ fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, encoding) {
     return &map;
 }
 
+
+fn decodeInstruction(buffer: []const u8, offset: u16, sizes: DecodedSizes) ?instruction.Instruction {
+    // TODO(evgheni): populate the  structure.
+    return .{
+        .opcode = instruction.Opcode.Mov,
+        .operand1 = .{
+            .location = instruction.OperandType.Register,
+            .register = instruction.Register.CX,
+        },
+        .operand2 = .{
+            .location = instruction.OperandType.Register,
+            .register = instruction.Register.BX,
+        },
+    };
+}
+
 pub fn decode(buffer: []const u8, offset: u16) !?instruction.Instruction {
     if (buffer.len > 0 and offset == 0) {
         const map = try createMapOfOpcodes();
+        defer map.deinit();
 
         var iter = map.iterator();
         while (iter.next()) |map_entry| {
             const mask = map_entry.key_ptr.*;
             if (buffer[0] & mask == mask) {
+
                 // TODO(evgheni): write a function to decode bits_enc
                 std.log.warn("encoding: {s}", .{map_entry.value_ptr.*.bits_enc});
             }
@@ -126,10 +144,22 @@ test "Decoding sizes" {
     try expect(bits.disp_hi == 8);
 }
 
-test "Instruction data" {
+test "decoding bits and sizes into instruction" {
     const bytes_buffer: [2]u8 = .{ 0b10001001, 0b11011001 };
+    const bits: DecodedSizes = .{
+        .opcode = 6,
+        .d_bit = 1,
+        .w_bit = 1,
+        .mod = 2,
+        .reg = 3,
+        .rm = 3,
+        .disp_lo = 8,
+        .disp_hi = 8,
+    };
 
-    const result = try decode(&bytes_buffer, 0);
+    result = 
+
+
 
     try expect(result.?.opcode == instruction.Opcode.Mov);
 }
