@@ -1,11 +1,13 @@
 const std = @import("std");
+const log = std.log;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
-
 const instruction = @import("instruction.zig");
+const Instruction = instruction.Instruction;
+const Opcode = instruction.Opcode;
 
-const example = instruction.Instruction{
-    .opcode = instruction.Opcode.Mov,
+const example = Instruction{
+    .opcode = Opcode.Mov,
     .operand1 = .{
         .location = instruction.OperandType.Register,
         .register = instruction.Register.CX,
@@ -16,9 +18,13 @@ const example = instruction.Instruction{
     },
 };
 
-const encoding = struct {
+const Encoding = struct {
     mnemonic: []const u8,
     bits_enc: []const u8,
+};
+
+const Decoding = struct {
+    opcode: Opcode,
 };
 
 const DecodedSizes = struct {
@@ -87,19 +93,61 @@ fn decodeBits(bits: []const u8) DecodedSizes {
     return result;
 }
 
-fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, encoding) {
-    var map = std.AutoArrayHashMap(u8, encoding).init(std.heap.page_allocator);
+fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, Encoding) {
+    var map = std.AutoArrayHashMap(u8, Encoding).init(std.heap.page_allocator);
 
     try map.put(0b100010_00, .{ .mnemonic = "mov", .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
 
     return &map;
 }
 
+const MOST_SIGNIFICANT_BIT_IDX = 7;
 
-fn decodeInstruction(buffer: []const u8, offset: u16, sizes: DecodedSizes) ?instruction.Instruction {
-    // TODO(evgheni): populate the  structure.
+fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u3) u8 {
+    var current_byte = bytes_buffer[offset];
+
+    const mask_base: u8 = 1;
+    var shift: u3 = 0;
+
+    if (start_bit.* < size) {
+        shift = 0;
+        start_bit.* = MOST_SIGNIFICANT_BIT_IDX;
+    } else {
+        start_bit.* -= size;
+        shift = start_bit.* + 1;
+    }
+
+    const shifted_num = current_byte >> shift;
+    log.warn("size = {d} shift  = {d}", .{ size, shift });
+
+    var mask: u8 = ((mask_base << size) - 1);
+    log.warn("byte = {b} ; shifted num = {b} ; mask = {b} ; masked num = {b}", .{ current_byte, shifted_num, mask, shifted_num & mask });
+
+    return shifted_num & mask;
+}
+
+fn decodeInstruction(buffer: []const u8, offset: u16, bits: []const u8) ?instruction.Instruction {
+    var key_buffer: [8]u8 = undefined;
+    var value_buffer: u8 = undefined;
+    var i: usize = 0;
+
+    for (bits) |bit| {
+        if (bit != ':') {
+            if (isNumber(bit)) {
+                value_buffer = bit;
+            } else {
+                key_buffer[i] = bit;
+                i += 1;
+            }
+            continue;
+        } else {
+            _ = buffer[offset..];
+            i = 0;
+            key_buffer = undefined;
+        }
+    }
     return .{
-        .opcode = instruction.Opcode.Mov,
+        .opcode = Opcode.Mov,
         .operand1 = .{
             .location = instruction.OperandType.Register,
             .register = instruction.Register.CX,
@@ -112,23 +160,19 @@ fn decodeInstruction(buffer: []const u8, offset: u16, sizes: DecodedSizes) ?inst
 }
 
 pub fn decode(buffer: []const u8, offset: u16) !?instruction.Instruction {
-    if (buffer.len > 0 and offset == 0) {
-        const map = try createMapOfOpcodes();
-        defer map.deinit();
+    const map = try createMapOfOpcodes();
+    defer map.deinit();
 
-        var iter = map.iterator();
-        while (iter.next()) |map_entry| {
-            const mask = map_entry.key_ptr.*;
-            if (buffer[0] & mask == mask) {
+    var iter = map.iterator();
+    while (iter.next()) |map_entry| {
+        const mask = map_entry.key_ptr.*;
+        if (buffer[offset] & mask == mask) {
 
-                // TODO(evgheni): write a function to decode bits_enc
-                std.log.warn("encoding: {s}", .{map_entry.value_ptr.*.bits_enc});
-            }
+            // TODO(evgheni): write a function to decode bits_enc
+            std.log.warn("Encoding: {s}", .{map_entry.value_ptr.*.bits_enc});
         }
-        return example;
     }
-
-    return null;
+    return example;
 }
 
 test "Decoding sizes" {
@@ -146,20 +190,8 @@ test "Decoding sizes" {
 
 test "decoding bits and sizes into instruction" {
     const bytes_buffer: [2]u8 = .{ 0b10001001, 0b11011001 };
-    const bits: DecodedSizes = .{
-        .opcode = 6,
-        .d_bit = 1,
-        .w_bit = 1,
-        .mod = 2,
-        .reg = 3,
-        .rm = 3,
-        .disp_lo = 8,
-        .disp_hi = 8,
-    };
-
-    result = 
-
-
+    const test_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8";
+    const result = decodeInstruction(&bytes_buffer, 0, test_enc);
 
     try expect(result.?.opcode == instruction.Opcode.Mov);
 }
@@ -178,4 +210,31 @@ test "string compare" {
     //const result = std.mem.eql(u8, key_buffer[0..], expected[0..]);
     const result = std.mem.startsWith(u8, &key_buffer, expected);
     try expect(result == true);
+}
+
+test "extract bits" {
+    const bytes_buffer: [2]u8 = .{ 0b10001001, 0b11011001 };
+    const sizes = [_]u3{ 6, 1, 1, 2, 3, 3 };
+    const expected = [_]u8{ 0b100010, 0, 1, 0b11, 0b011, 0b001 };
+
+    var offset: usize = 0;
+    var start_bit: u3 = MOST_SIGNIFICANT_BIT_IDX;
+    var total_bits: u8 = 0;
+
+    for (sizes, 0..) |size, i| {
+        total_bits += size;
+        try expect(extractBits(&bytes_buffer, &start_bit, offset, size) == expected[i]);
+        if (@rem(total_bits, 8) == 0) {
+            offset += 1;
+        }
+    }
+}
+
+test "shifting" {
+    const test_size = 6;
+    const num: u8 = 0b10001001;
+    const shifted_num = num >> (8 - test_size);
+    const mask: u8 = (1 << test_size) - 1;
+
+    log.warn("original {b} shifted {b} masked {b}", .{ num, shifted_num, shifted_num & mask });
 }
