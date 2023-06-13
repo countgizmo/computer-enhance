@@ -27,70 +27,46 @@ const Decoding = struct {
     opcode: Opcode,
 };
 
-const DecodedSizes = struct {
-    opcode: u8 = 0,
-    d_bit: u8 = 0,
-    w_bit: u8 = 0,
-    mod: u8 = 0,
-    reg: u8 = 0,
-    rm: u8 = 0,
-    disp_lo: u8 = 0,
-    disp_hi: u8 = 0,
-};
-
 fn isNumber(ch: u8) bool {
     return (ch >= '0' and ch <= '9');
 }
 
-fn charToDigit(ch: u8) u8 {
-    return std.fmt.charToDigit(ch, 10) catch 0;
+fn charToDigit(ch: u8) u3 {
+    return @intCast(u3, std.fmt.charToDigit(ch, 7) catch 0);
 }
 
-fn populateSize(sizes: *DecodedSizes, key_buffer: []u8, value_buffer: u8) void {
+const Identifier = enum {
+    none,
+    opcode,
+    mod,
+    reg,
+    rm,
+    d,
+    w,
+    disp_lo,
+    disp_hi,
+};
+
+fn keyToIdentifier(key_buffer: []u8) Identifier {
     if (std.mem.startsWith(u8, key_buffer, "opcode")) {
-        sizes.opcode = charToDigit(value_buffer);
+        return .opcode;
     } else if (std.mem.startsWith(u8, key_buffer, "disp-lo")) {
-        sizes.disp_lo = charToDigit(value_buffer);
+        return .disp_lo;
     } else if (std.mem.startsWith(u8, key_buffer, "disp-hi")) {
-        sizes.disp_hi = charToDigit(value_buffer);
+        return .disp_hi;
     } else if (std.mem.startsWith(u8, key_buffer, "mod")) {
-        sizes.mod = charToDigit(value_buffer);
+        return .mod;
     } else if (std.mem.startsWith(u8, key_buffer, "reg")) {
-        sizes.reg = charToDigit(value_buffer);
+        return .reg;
     } else if (std.mem.startsWith(u8, key_buffer, "rm")) {
-        sizes.rm = charToDigit(value_buffer);
+        return .rm;
     } else if (std.mem.startsWith(u8, key_buffer, "d")) {
-        sizes.d_bit = charToDigit(value_buffer);
+        return .d;
     } else if (std.mem.startsWith(u8, key_buffer, "w")) {
-        sizes.w_bit = charToDigit(value_buffer);
-    }
-}
-
-fn decodeBits(bits: []const u8) DecodedSizes {
-    var result: DecodedSizes = .{};
-    var key_buffer: [8]u8 = undefined;
-    var value_buffer: u8 = undefined;
-    var i: usize = 0;
-
-    for (bits) |bit| {
-        if (bit != ':') {
-            if (isNumber(bit)) {
-                value_buffer = bit;
-            } else {
-                key_buffer[i] = bit;
-                i += 1;
-            }
-            continue;
-        } else {
-            populateSize(&result, &key_buffer, value_buffer);
-            i = 0;
-            key_buffer = undefined;
-        }
+        return .w;
     }
 
-    populateSize(&result, &key_buffer, value_buffer);
-
-    return result;
+    return .none;
 }
 
 fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, Encoding) {
@@ -118,44 +94,106 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u3
     }
 
     const shifted_num = current_byte >> shift;
-    log.warn("size = {d} shift  = {d}", .{ size, shift });
+    //log.warn("size = {d} shift  = {d}", .{ size, shift });
 
     var mask: u8 = ((mask_base << size) - 1);
-    log.warn("byte = {b} ; shifted num = {b} ; mask = {b} ; masked num = {b}", .{ current_byte, shifted_num, mask, shifted_num & mask });
+    //log.warn("byte = {b} ; shifted num = {b} ; mask = {b} ; masked num = {b}", .{ current_byte, shifted_num, mask, shifted_num & mask });
 
     return shifted_num & mask;
 }
 
+fn decodeDestination(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
+    if (mod == 0b11) {
+        if (d == 1) {
+            const register_idx: u8 = if (w == 1) reg * 2 else reg;
+            return .{
+                .location = instruction.OperandType.Register,
+                .register = @intToEnum(instruction.Register, register_idx),
+            };
+        } else {
+            const register_idx: u8 = if (w == 1) rm * 2 else rm;
+            return .{
+                .location = instruction.OperandType.Register,
+                .register = @intToEnum(instruction.Register, register_idx),
+            };
+        }
+    }
+
+    //TODO(evgheni): provide sane default return or null or something
+    // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
+    return .{
+        .location = instruction.OperandType.Memory,
+        .register = @intToEnum(instruction.Register, 0),
+    };
+}
+
 fn decodeInstruction(buffer: []const u8, offset: u16, bits: []const u8) ?instruction.Instruction {
-    var key_buffer: [8]u8 = undefined;
-    var value_buffer: u8 = undefined;
+    var current_offset = offset;
+    var key: [8]u8 = undefined;
+    var value: u8 = undefined;
     var i: usize = 0;
+    var total_bits: u8 = 0;
+    var start_bit: u3 = MOST_SIGNIFICANT_BIT_IDX;
+    var mod: u8 = 0;
+    var reg: u8 = 0;
+    var rm: u8 = 0;
+    var d: u8 = 0;
+    var w: u8 = 0;
 
     for (bits) |bit| {
+        // We have less bytes than can be encoded
+        if (current_offset >= buffer.len) {
+            break;
+        }
+
         if (bit != ':') {
             if (isNumber(bit)) {
-                value_buffer = bit;
+                value = bit;
             } else {
-                key_buffer[i] = bit;
+                key[i] = bit;
                 i += 1;
             }
             continue;
         } else {
-            _ = buffer[offset..];
+            const id = keyToIdentifier(&key);
+            const size = charToDigit(value);
+            const bit_value = extractBits(buffer, &start_bit, current_offset, size);
+            total_bits += size;
+            log.warn("id = {c} size {d}", .{ @tagName(id), size });
+            if (@rem(total_bits, 8) == 0) {
+                current_offset += 1;
+            }
+
+            switch (id) {
+                .mod => {
+                    mod = bit_value;
+                },
+                .reg => {
+                    reg = bit_value;
+                },
+                .rm => {
+                    rm = bit_value;
+                },
+                .d => {
+                    d = bit_value;
+                },
+                .w => {
+                    w = bit_value;
+                },
+                else => {},
+            }
             i = 0;
-            key_buffer = undefined;
+            key = undefined;
         }
     }
     return .{
         .opcode = Opcode.Mov,
-        .operand1 = .{
-            .location = instruction.OperandType.Register,
-            .register = instruction.Register.CX,
-        },
+        .operand1 = decodeDestination(mod, reg, rm, d, w),
         .operand2 = .{
             .location = instruction.OperandType.Register,
             .register = instruction.Register.BX,
         },
+        .size = current_offset - offset,
     };
 }
 
@@ -173,19 +211,6 @@ pub fn decode(buffer: []const u8, offset: u16) !?instruction.Instruction {
         }
     }
     return example;
-}
-
-test "Decoding sizes" {
-    const test_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8";
-    const bits = decodeBits(test_enc);
-    try expect(bits.opcode == 6);
-    try expect(bits.d_bit == 1);
-    try expect(bits.w_bit == 1);
-    try expect(bits.mod == 2);
-    try expect(bits.reg == 3);
-    try expect(bits.rm == 3);
-    try expect(bits.disp_lo == 8);
-    try expect(bits.disp_hi == 8);
 }
 
 test "decoding bits and sizes into instruction" {
