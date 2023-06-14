@@ -8,20 +8,8 @@ const instruction = @import("instruction.zig");
 const Instruction = instruction.Instruction;
 const Opcode = instruction.Opcode;
 
-const example = Instruction{
-    .opcode = Opcode.Mov,
-    .operand1 = .{
-        .location = instruction.OperandType.Register,
-        .register = instruction.Register.CX,
-    },
-    .operand2 = .{
-        .location = instruction.OperandType.Register,
-        .register = instruction.Register.BX,
-    },
-};
-
 const Encoding = struct {
-    mnemonic: []const u8,
+    opcode: Opcode,
     bits_enc: []const u8,
 };
 
@@ -74,7 +62,7 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
 fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, Encoding) {
     var map = std.AutoArrayHashMap(u8, Encoding).init(std.heap.page_allocator);
 
-    try map.put(0b100010_00, .{ .mnemonic = "mov", .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
+    try map.put(0b100010_00, .{ .opcode = Opcode.mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
 
     return &map;
 }
@@ -114,13 +102,11 @@ fn decodeDestination(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand
         if (d == 1) {
             const register_idx: u8 = if (w == 1) reg + 8 else reg;
             return .{
-                .location = instruction.OperandType.Register,
                 .register = @intToEnum(instruction.Register, register_idx),
             };
         } else {
             const register_idx: u8 = if (w == 1) rm + 8 else rm;
             return .{
-                .location = instruction.OperandType.Register,
                 .register = @intToEnum(instruction.Register, register_idx),
             };
         }
@@ -129,7 +115,6 @@ fn decodeDestination(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
     return .{
-        .location = instruction.OperandType.Memory,
         .register = @intToEnum(instruction.Register, 0),
     };
 }
@@ -139,13 +124,11 @@ fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
         if (d == 0) {
             const register_idx: u8 = if (w == 1) reg + 8 else reg;
             return .{
-                .location = instruction.OperandType.Register,
                 .register = @intToEnum(instruction.Register, register_idx),
             };
         } else {
             const register_idx: u8 = if (w == 1) rm + 8 else rm;
             return .{
-                .location = instruction.OperandType.Register,
                 .register = @intToEnum(instruction.Register, register_idx),
             };
         }
@@ -154,12 +137,11 @@ fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
     return .{
-        .location = instruction.OperandType.Memory,
         .register = @intToEnum(instruction.Register, 0),
     };
 }
 
-fn decodeInstruction(buffer: []const u8, offset: u16, bits: []const u8) ?instruction.Instruction {
+fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instruction.Instruction {
     var current_offset = offset;
     var key: [8]u8 = undefined;
     var value: u8 = undefined;
@@ -172,7 +154,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, bits: []const u8) ?instruc
     var d: u8 = 0;
     var w: u8 = 0;
 
-    for (bits) |bit| {
+    for (encoding.bits_enc) |bit| {
         // We have less bytes than can be encoded
         if (current_offset >= buffer.len) {
             break;
@@ -231,7 +213,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, bits: []const u8) ?instruc
         }
     }
     return .{
-        .opcode = Opcode.Mov,
+        .opcode = encoding.opcode,
         .operand1 = decodeDestination(mod, reg, rm, d, w),
         .operand2 = decodeSource(mod, reg, rm, d, w),
         .size = current_offset - offset,
@@ -249,9 +231,7 @@ pub fn decode(allocator: Allocator, buffer: []const u8, offset: u16) !?[]Instruc
         while (iterator.next()) |entry| {
             const key = entry.key_ptr.*;
             if (buffer[current_offset] & key == key) {
-                const bits_enc = entry.value_ptr.*.bits_enc;
-                std.log.warn("Encoding: {s}", .{bits_enc});
-                if (decodeInstruction(buffer, current_offset, bits_enc)) |inst| {
+                if (decodeInstruction(buffer, current_offset, entry.value_ptr.*)) |inst| {
                     try instructions.append(inst);
                     current_offset += inst.size;
                 }
@@ -273,15 +253,15 @@ test "decoding many instructions" {
 
 test "decoding instruction" {
     const bytes_buffer: [2]u8 = .{ 0b10001001, 0b11011001 };
-    const test_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8";
-    const result = decodeInstruction(&bytes_buffer, 0, test_enc);
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+    const result = decodeInstruction(&bytes_buffer, 0, encoding);
 
-    try expect(result.?.opcode == instruction.Opcode.Mov);
-    try expectEqual(instruction.OperandType.Register, result.?.operand1.location);
-    try expectEqual(instruction.Register.CX, result.?.operand1.register.?);
-
-    try expectEqual(instruction.OperandType.Register, result.?.operand2.?.location);
-    try expectEqual(instruction.Register.BX, result.?.operand2.?.register.?);
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(instruction.Register.cx, result.?.operand1.register);
+    try expectEqual(instruction.Register.bx, result.?.operand2.?.register);
 }
 
 test "string compare" {
