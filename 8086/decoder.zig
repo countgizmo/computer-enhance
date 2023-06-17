@@ -171,7 +171,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
         } else {
             const id = keyToIdentifier(&key);
             const size = charToDigit(value);
-            log.warn("id = {c} size {d}", .{ @tagName(id), size });
+            //log.warn("id = {c} size {d}", .{ @tagName(id), size });
             const bit_value = extractBits(buffer, &start_bit, current_offset, size);
 
             switch (id) {
@@ -220,14 +220,14 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     };
 }
 
-pub fn decode(allocator: Allocator, buffer: []const u8, offset: u16) !?[]Instruction {
+pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offset: u16) !?[]Instruction {
     const map = try createMapOfOpcodes();
     var instructions = ArrayList(Instruction).init(allocator);
     var current_offset = offset;
 
     var iterator = map.iterator();
 
-    while (current_offset < buffer.len) {
+    while (current_offset < buffer_len) {
         while (iterator.next()) |entry| {
             const key = entry.key_ptr.*;
             if (buffer[current_offset] & key == key) {

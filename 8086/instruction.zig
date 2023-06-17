@@ -26,8 +26,14 @@ pub const Opcode = enum {
     mov,
 };
 
-pub const Operand = union {
+pub const OperandType = enum {
+    register,
+    immediate,
+};
+
+pub const Operand = union(OperandType) {
     register: Register,
+    immediate: i16,
 };
 
 pub const Instruction = struct {
