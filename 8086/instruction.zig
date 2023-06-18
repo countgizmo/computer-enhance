@@ -22,6 +22,15 @@ pub const Register = enum {
     di,
 };
 
+pub const RegistersNoDisp = [_][2]Register{
+    [2]Register{ Register.bx, Register.si },
+};
+
+pub const MemoryCalculationNoDisp = union {
+    registers: [2]Register,
+    direct_address: u16,
+};
+
 pub const Opcode = enum {
     mov,
 };
@@ -29,11 +38,13 @@ pub const Opcode = enum {
 pub const OperandType = enum {
     register,
     immediate,
+    memory_calculation_no_disp,
 };
 
 pub const Operand = union(OperandType) {
     register: Register,
     immediate: i16,
+    memory_calculation_no_disp: MemoryCalculationNoDisp,
 };
 
 pub const Instruction = struct {

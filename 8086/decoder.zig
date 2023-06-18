@@ -7,6 +7,8 @@ const expectEqual = std.testing.expectEqual;
 const instruction = @import("instruction.zig");
 const Instruction = instruction.Instruction;
 const Opcode = instruction.Opcode;
+const Register = instruction.Register;
+const MemoryCalculationNoDisp = instruction.MemoryCalculationNoDisp;
 
 const Encoding = struct {
     opcode: Opcode,
@@ -150,6 +152,22 @@ fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8, data: ?u8, dataw: ?u8) i
         }
     }
 
+    if (mod == 0b00) {
+        if (d == 0) {
+            const calculation_idx: u8 = reg;
+            return .{
+                .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+            };
+        } else {
+            const calculation_idx: u8 = rm;
+            log.warn("calc idx = {d} ", .{calculation_idx});
+
+            return .{
+                .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+            };
+        }
+    }
+
     if (data) |value_lo| {
         if (dataw) |value_hi| {
             return .{
@@ -203,7 +221,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
             const id = keyToIdentifier(&key);
             const size = charToDigit(value);
             const bit_value = extractBits(buffer, &start_bit, current_offset, size);
-            //log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
+            log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
 
             switch (id) {
                 .mod => {
@@ -222,12 +240,12 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
                     w = bit_value;
                 },
                 .disp_lo => {
-                    if (mod == 0b11) {
+                    if (mod == 0b11 or mod == 0b00) {
                         break;
                     }
                 },
                 .disp_hi => {
-                    if (mod == 0b11) {
+                    if (mod == 0b11 or mod == 0b00) {
                         break;
                     }
                 },
@@ -328,6 +346,34 @@ test "decoding instruction - 16-bit immediate" {
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.dx, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate == 3948);
+}
+
+test "decoding effective memory address calculation to register" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+    const bytes_buffer = [2]u8{ 0b10001010, 0b00000000 };
+    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+
+    try expect(result.?.opcode == Opcode.mov);
+    try expect(result.?.size == 2);
+    try expectEqual(instruction.Register.al, result.?.operand1.register);
+    try expect(result.?.operand2.?.memory_calculation_no_disp.registers[0] == Register.bx);
+    try expect(result.?.operand2.?.memory_calculation_no_disp.registers[1] == Register.si);
+}
+
+test "decoding effective memory address calculation with displacement" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+    const bytes_buffer = [3]u8 { 0b10001011, 0b01010110, 0b00000000 };
+    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+
+    try expect(result.?.opcode == Opcode.mov);
+    //TODO(evhgni): add memory calculation with disp-8
+    //In this case the disp-8 is present but is 0. A case for printer "__
 }
 
 test "string compare" {

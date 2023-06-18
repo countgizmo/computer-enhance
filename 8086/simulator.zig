@@ -21,7 +21,7 @@ pub fn main() !void {
 
     if (instructions) |insts| {
         for (insts) |inst| {
-            try printer.printInstruction(inst);
+            try printer.printInstruction(arena.allocator(), inst);
         }
     }
 }

@@ -10,38 +10,49 @@ const Instruction = instruction.Instruction;
 const Opcode = instruction.Opcode;
 const Register = instruction.Register;
 const Operand = instruction.Operand;
+const MemoryCalculation = instruction.MemoryCalculation;
 
-fn operandToStr(operand: Operand) []const u8 {
-    var buf: [16]u8 = undefined;
-    const result: []const u8 = switch (operand) {
-        .register => |val| @tagName(val),
+pub const mem_calc_human_readable = [_][]const u8{
+    "[bx + si]",
+    "[bx + di]",
+    "[bp + si]",
+    "[bp + di]",};
+
+fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
+    var result: []u8 = switch (operand) {
+        .register => |val| {
+            return fmt.allocPrint(allocator, "{s}", .{@tagName(val)});
+        },
         .immediate => |val| {
-            var foo: []u8 = &.{};
-            return fmt.bufPrint(&buf, "{d}", .{val}) catch foo;
+            return fmt.allocPrint(allocator, "{d}", .{val});
+        },
+        .memory_calculation => |val| {
+            const hr = mem_calc_human_readable[@enumToInt(val)];
+            return fmt.allocPrint(allocator, "{s}", .{hr});
         },
     };
 
     return result;
 }
 
-fn bufPrintInstruction(buf: []u8, inst: Instruction) ![]u8 {
-    var result: []u8 = undefined;
-    const operand1 = operandToStr(inst.operand1);
+fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
+    const operand1 = try operandToStr(allocator, inst.operand1);
+    defer allocator.free(operand1);
 
     if (inst.operand2) |op2| {
-        const operand2 = operandToStr(op2);
-        result = try fmt.bufPrint(buf, "{s} {s} {s}", .{ @tagName(inst.opcode), operand1, operand2 });
+        const operand2 = try operandToStr(allocator, op2);
+        defer allocator.free(operand2);
+        return try fmt.allocPrint(allocator, "{s} {s} {s}", .{ @tagName(inst.opcode), operand1, operand2 });
     } else {
-        result = try fmt.bufPrint(buf, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
+        return try fmt.allocPrint(allocator, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
     }
 
-    return result;
+    return &.{};
 }
 
-pub fn printInstruction(inst: Instruction) !void {
-    var buf: [256]u8 = undefined;
+pub fn printInstruction(allocator: Allocator, inst: Instruction) !void {
     const stdout = std.io.getStdOut().writer();
-    const inst_str = try bufPrintInstruction(&buf, inst);
+    const inst_str = try bufPrintInstruction(allocator, inst);
     try stdout.print("{s}\n", .{inst_str});
 }
 
@@ -64,5 +75,22 @@ test "print mov" {
     var buf: [256]u8 = undefined;
     const expected = "mov al 3456";
     const actual = try bufPrintInstruction(&buf, inst);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print memory calculation" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = Register.al,
+        },
+        .operand2 = .{
+            .memory_calculation = MemoryCalculation.bx_si,
+        },
+    };
+    const expected = "mov al [bx + si]";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
