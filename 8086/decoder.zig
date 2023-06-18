@@ -35,6 +35,8 @@ const Identifier = enum {
     w,
     disp_lo,
     disp_hi,
+    data,
+    dataw,
 };
 
 fn keyToIdentifier(key_buffer: []u8) Identifier {
@@ -44,6 +46,10 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
         return .disp_lo;
     } else if (std.mem.startsWith(u8, key_buffer, "disp-hi")) {
         return .disp_hi;
+    } else if (std.mem.startsWith(u8, key_buffer, "dataw")) {
+        return .dataw;
+    } else if (std.mem.startsWith(u8, key_buffer, "data")) {
+        return .data;
     } else if (std.mem.startsWith(u8, key_buffer, "mod")) {
         return .mod;
     } else if (std.mem.startsWith(u8, key_buffer, "reg")) {
@@ -59,10 +65,19 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
     return .none;
 }
 
-fn createMapOfOpcodes() !*std.AutoArrayHashMap(u8, Encoding) {
-    var map = std.AutoArrayHashMap(u8, Encoding).init(std.heap.page_allocator);
+fn createMapOfOpcodes() !*std.AutoArrayHashMap([2]u8, Encoding) {
+    var map = std.AutoArrayHashMap([2]u8, Encoding).init(std.heap.page_allocator);
 
-    try map.put(0b100010_00, .{ .opcode = Opcode.mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
+    //
+    // mov
+    //
+
+    // Register/memory to/from register/memory
+    try map.put(.{ 0b100010_00, 0b11111_000 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
+
+    // Immediate to register
+    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8" });
+    //try map.put(0b1100011_0, .{ .opcode = Opcode.mov, .bits_enc = "opcdoe7:d0:w1:mod2:reg3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
 
     return &map;
 }
@@ -114,12 +129,13 @@ fn decodeDestination(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand
 
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
+    const register_idx: u8 = if (w == 1) reg + 8 else reg;
     return .{
-        .register = @intToEnum(instruction.Register, 0),
+        .register = @intToEnum(instruction.Register, register_idx),
     };
 }
 
-fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
+fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8, data: ?u8, dataw: ?u8) instruction.Operand {
     if (mod == 0b11) {
         if (d == 0) {
             const register_idx: u8 = if (w == 1) reg + 8 else reg;
@@ -130,6 +146,18 @@ fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
             const register_idx: u8 = if (w == 1) rm + 8 else rm;
             return .{
                 .register = @intToEnum(instruction.Register, register_idx),
+            };
+        }
+    }
+
+    if (data) |value_lo| {
+        if (dataw) |value_hi| {
+            return .{
+                .immediate = @as(i16, value_hi) << 8 | value_lo,
+            };
+        } else {
+            return .{
+                .immediate = value_lo,
             };
         }
     }
@@ -153,8 +181,10 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     var rm: u8 = 0;
     var d: u8 = 0;
     var w: u8 = 0;
+    var data: ?u8 = null;
+    var dataw: ?u8 = null;
 
-    for (encoding.bits_enc) |bit| {
+    for (encoding.bits_enc, 0..) |bit, ch_idx| {
         // We have less bytes than can be encoded
         if (current_offset >= buffer.len) {
             break;
@@ -167,12 +197,13 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
                 key[i] = bit;
                 i += 1;
             }
-            continue;
-        } else {
+        }
+
+        if ((bit == ':') or (ch_idx == encoding.bits_enc.len - 1)) {
             const id = keyToIdentifier(&key);
             const size = charToDigit(value);
-            //log.warn("id = {c} size {d}", .{ @tagName(id), size });
             const bit_value = extractBits(buffer, &start_bit, current_offset, size);
+            //log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
 
             switch (id) {
                 .mod => {
@@ -200,6 +231,15 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
                         break;
                     }
                 },
+                .data => {
+                    data = bit_value;
+                },
+                .dataw => {
+                    if (w == 0) {
+                        break;
+                    }
+                    dataw = bit_value;
+                },
                 else => {},
             }
 
@@ -215,7 +255,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     return .{
         .opcode = encoding.opcode,
         .operand1 = decodeDestination(mod, reg, rm, d, w),
-        .operand2 = decodeSource(mod, reg, rm, d, w),
+        .operand2 = decodeSource(mod, reg, rm, d, w, data, dataw),
         .size = current_offset - offset,
     };
 }
@@ -230,10 +270,11 @@ pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offse
     while (current_offset < buffer_len) {
         while (iterator.next()) |entry| {
             const key = entry.key_ptr.*;
-            if (buffer[current_offset] & key == key) {
+            if (buffer[current_offset] & key[1] == key[0]) {
                 if (decodeInstruction(buffer, current_offset, entry.value_ptr.*)) |inst| {
                     try instructions.append(inst);
                     current_offset += inst.size;
+                    break; //Note(evgheni): don't need to continue checking the map of opcodee
                 }
             }
         }
@@ -246,8 +287,7 @@ test "decoding many instructions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer _ = arena.deinit();
     const bytes = [_]u8{ 0b10001001, 0b11011001, 0b10001000, 0b11100101, 0b10001001, 0b11011010 };
-    const instructions = try decode(arena.allocator(), &bytes, 0);
-    log.warn("instructions = {any}", .{instructions});
+    const instructions = try decode(arena.allocator(), &bytes, bytes.len, 0);
     try expect(instructions.?.len == 3);
 }
 
@@ -262,6 +302,32 @@ test "decoding instruction" {
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.cx, result.?.operand1.register);
     try expectEqual(instruction.Register.bx, result.?.operand2.?.register);
+}
+
+test "decoding instruction - 8-bit immediate" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode4:w1:reg3:data8:dataw8",
+    };
+    const bytes_buffer = [2]u8{ 0b10110001, 0b00001100 };
+
+    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(instruction.Register.cl, result.?.operand1.register);
+    try expect(result.?.operand2.?.immediate == 12);
+}
+
+test "decoding instruction - 16-bit immediate" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode4:w1:reg3:data8:dataw8",
+    };
+    const bytes_buffer = [3]u8{ 0b10111010, 0b01101100, 0b00001111 };
+
+    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(instruction.Register.dx, result.?.operand1.register);
+    try expect(result.?.operand2.?.immediate == 3948);
 }
 
 test "string compare" {
