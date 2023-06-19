@@ -17,6 +17,13 @@ const Encoding = struct {
 
 const Decoding = struct {
     opcode: Opcode,
+    mod: ?u8 = null,
+    reg: u8 = 0,
+    rm: u8 = 0,
+    d: u8 = 0,
+    w: u8 = 0,
+    data: ?u8 = null,
+    dataw: ?u8 = null,
 };
 
 fn isNumber(ch: u8) bool {
@@ -114,62 +121,64 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u8
     return shifted_num & mask;
 }
 
-fn decodeDestination(mod: u8, reg: u8, rm: u8, d: u8, w: u8) instruction.Operand {
-    if (mod == 0b11) {
-        if (d == 1) {
-            const register_idx: u8 = if (w == 1) reg + 8 else reg;
-            return .{
-                .register = @intToEnum(instruction.Register, register_idx),
-            };
-        } else {
-            const register_idx: u8 = if (w == 1) rm + 8 else rm;
-            return .{
-                .register = @intToEnum(instruction.Register, register_idx),
-            };
+fn decodeDestination(decoding: Decoding) instruction.Operand {
+    if (decoding.mod) |mod| {
+        if (mod == 0b11) {
+            if (decoding.d == 1) {
+                const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+                return .{
+                    .register = @intToEnum(instruction.Register, register_idx),
+                };
+            } else {
+                const register_idx: u8 = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+                return .{
+                    .register = @intToEnum(instruction.Register, register_idx),
+                };
+            }
         }
     }
 
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
-    const register_idx: u8 = if (w == 1) reg + 8 else reg;
+    const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     return .{
         .register = @intToEnum(instruction.Register, register_idx),
     };
 }
 
-fn decodeSource(mod: u8, reg: u8, rm: u8, d: u8, w: u8, data: ?u8, dataw: ?u8) instruction.Operand {
-    if (mod == 0b11) {
-        if (d == 0) {
-            const register_idx: u8 = if (w == 1) reg + 8 else reg;
-            return .{
-                .register = @intToEnum(instruction.Register, register_idx),
-            };
-        } else {
-            const register_idx: u8 = if (w == 1) rm + 8 else rm;
-            return .{
-                .register = @intToEnum(instruction.Register, register_idx),
-            };
+fn decodeSource(decoding: Decoding) instruction.Operand {
+    if (decoding.mod) |mod| {
+        if (mod == 0b11) {
+            if (decoding.d == 0) {
+                const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+                return .{
+                    .register = @intToEnum(instruction.Register, register_idx),
+                };
+            } else {
+                const register_idx: u8 = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+                return .{
+                    .register = @intToEnum(instruction.Register, register_idx),
+                };
+            }
+        }
+
+        if (mod == 0b00) {
+            if (decoding.d == 0) {
+                const calculation_idx: u8 = decoding.reg;
+                return .{
+                    .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+                };
+            } else {
+                const calculation_idx: u8 = decoding.rm;
+                return .{
+                    .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+                };
+            }
         }
     }
 
-    if (mod == 0b00) {
-        if (d == 0) {
-            const calculation_idx: u8 = reg;
-            return .{
-                .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
-            };
-        } else {
-            const calculation_idx: u8 = rm;
-            log.warn("calc idx = {d} ", .{calculation_idx});
-
-            return .{
-                .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
-            };
-        }
-    }
-
-    if (data) |value_lo| {
-        if (dataw) |value_hi| {
+    if (decoding.data) |value_lo| {
+        if (decoding.dataw) |value_hi| {
             return .{
                 .immediate = @as(i16, value_hi) << 8 | value_lo,
             };
@@ -194,13 +203,9 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     var i: usize = 0;
     var total_bits: u8 = 0;
     var start_bit: u3 = MOST_SIGNIFICANT_BIT_IDX;
-    var mod: u8 = 0;
-    var reg: u8 = 0;
-    var rm: u8 = 0;
-    var d: u8 = 0;
-    var w: u8 = 0;
-    var data: ?u8 = null;
-    var dataw: ?u8 = null;
+    var decoding: Decoding = .{
+        .opcode = encoding.opcode,
+    };
 
     for (encoding.bits_enc, 0..) |bit, ch_idx| {
         // We have less bytes than can be encoded
@@ -221,42 +226,46 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
             const id = keyToIdentifier(&key);
             const size = charToDigit(value);
             const bit_value = extractBits(buffer, &start_bit, current_offset, size);
-            log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
+           // log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
 
             switch (id) {
                 .mod => {
-                    mod = bit_value;
+                    decoding.mod = bit_value;
                 },
                 .reg => {
-                    reg = bit_value;
+                    decoding.reg = bit_value;
                 },
                 .rm => {
-                    rm = bit_value;
+                    decoding.rm = bit_value;
                 },
                 .d => {
-                    d = bit_value;
+                    decoding.d = bit_value;
                 },
                 .w => {
-                    w = bit_value;
+                    decoding.w = bit_value;
                 },
                 .disp_lo => {
-                    if (mod == 0b11 or mod == 0b00) {
-                        break;
+                    if (decoding.mod) |mod| {
+                        if (mod == 0b11 or mod == 0b00) {
+                            break;
+                        }
                     }
                 },
                 .disp_hi => {
-                    if (mod == 0b11 or mod == 0b00) {
-                        break;
+                    if (decoding.mod) |mod| {
+                        if (mod == 0b11 or mod == 0b00) {
+                            break;
+                        }
                     }
                 },
                 .data => {
-                    data = bit_value;
+                    decoding.data = bit_value;
                 },
                 .dataw => {
-                    if (w == 0) {
+                    if (decoding.w == 0) {
                         break;
                     }
-                    dataw = bit_value;
+                    decoding.dataw = bit_value;
                 },
                 else => {},
             }
@@ -272,8 +281,8 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     }
     return .{
         .opcode = encoding.opcode,
-        .operand1 = decodeDestination(mod, reg, rm, d, w),
-        .operand2 = decodeSource(mod, reg, rm, d, w, data, dataw),
+        .operand1 = decodeDestination(decoding),
+        .operand2 = decodeSource(decoding),
         .size = current_offset - offset,
     };
 }
@@ -298,14 +307,15 @@ pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offse
         }
         iterator.reset();
     }
-    return instructions.items;
+
+    return  try instructions.toOwnedSlice();
 }
 
 test "decoding many instructions" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer _ = arena.deinit();
+    var allocator = std.testing.allocator;
     const bytes = [_]u8{ 0b10001001, 0b11011001, 0b10001000, 0b11100101, 0b10001001, 0b11011010 };
-    const instructions = try decode(arena.allocator(), &bytes, bytes.len, 0);
+    const instructions = try decode(allocator, &bytes, bytes.len, 0);
+    allocator.free(instructions.?);
     try expect(instructions.?.len == 3);
 }
 
