@@ -24,6 +24,8 @@ const Decoding = struct {
     w: u8 = 0,
     data: ?u8 = null,
     dataw: ?u8 = null,
+    disp_lo: ?u8 = null,
+    disp_hi: ?u8 = null,
 };
 
 fn isNumber(ch: u8) bool {
@@ -175,6 +177,26 @@ fn decodeSource(decoding: Decoding) instruction.Operand {
                 };
             }
         }
+
+        if (mod == 0b01) {
+            if (decoding.d == 0) {
+                const calculation_idx: u8 = decoding.reg;
+                var result = .{
+                    .mem_calc_with_disp = instruction.MemCalcWithDispTable[calculation_idx],
+                };
+
+                result.mem_calc_with_disp.disp = . { .byte = decoding.disp_lo.? };
+                return result;
+            } else {
+                const calculation_idx: u8 = decoding.rm;
+                var result = .{
+                    .mem_calc_with_disp = instruction.MemCalcWithDispTable[calculation_idx],
+                };
+
+                result.mem_calc_with_disp.disp = . { .byte = decoding.disp_lo.? };
+                return result;
+            }
+        }
     }
 
     if (decoding.data) |value_lo| {
@@ -250,6 +272,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
                             break;
                         }
                     }
+                    decoding.disp_lo = bit_value;
                 },
                 .disp_hi => {
                     if (decoding.mod) |mod| {
@@ -257,6 +280,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
                             break;
                         }
                     }
+                    decoding.disp_hi = bit_value;
                 },
                 .data => {
                     decoding.data = bit_value;
@@ -381,10 +405,25 @@ test "decoding effective memory address calculation with displacement" {
     const bytes_buffer = [3]u8 { 0b10001011, 0b01010110, 0b00000000 };
     const result = decodeInstruction(&bytes_buffer, 0, encoding);
 
+    // mov dx, [bp]
+
     try expect(result.?.opcode == Opcode.mov);
-    //TODO(evhgni): add memory calculation with disp-8
-    //In this case the disp-8 is present but is 0. A case for printer "__
+    try expectEqual(Register.dx, result.?.operand1.register);
+    try expectEqual(Register.bp, result.?.operand2.?.mem_calc_with_disp.register1);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.byte == 0);
+
+    // mov ah, [bx + si + 4]
+
+    const bytes_buffer_2 = [3]u8 { 0b10001010, 0b01100000, 0b00000100 };
+    const result_2 = decodeInstruction(&bytes_buffer_2, 0, encoding);
+
+    try expect(result_2.?.opcode == Opcode.mov);
+    try expectEqual(Register.ah, result_2.?.operand1.register);
+    try expectEqual(Register.bx, result_2.?.operand2.?.mem_calc_with_disp.register1);
+    try expectEqual(Register.si, result_2.?.operand2.?.mem_calc_with_disp.register2.?);
+    try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.?.byte == 4);
 }
+
 
 test "string compare" {
     var key_buffer: [8]u8 = undefined;
