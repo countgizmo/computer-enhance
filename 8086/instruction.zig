@@ -22,13 +22,32 @@ pub const Register = enum {
     di,
 };
 
-pub const RegistersNoDisp = [_][2]Register{
-    [2]Register{ Register.bx, Register.si },
+
+const Displacement = union(enum) {
+    byte: u8,
+    word: u16,
 };
 
-pub const MemoryCalculationNoDisp = union {
-    registers: [2]Register,
+pub const MemCalc = struct {
+    register1: Register,
+    register2: ?Register = null,
+    disp: ?Displacement = null,
+};
+
+pub const MemCalcNoDisp = union {
+    mem_calc: MemCalc,
     direct_address: u16,
+};
+
+pub const MemCalcTable = [_]MemCalc {
+    .{ .register1 = .bx, .register2 = .si, },
+    .{ .register1 = .bx, .register2 = .di, },
+    .{ .register1 = .bp, .register2 = .si, },
+    .{ .register1 = .bp, .register2 = .si, },
+    .{ .register1 = .si, },
+    .{ .register1 = .di, },
+    .{ .register1 = .bp, },
+    .{ .register1 = .bx, },
 };
 
 pub const Opcode = enum {
@@ -38,13 +57,15 @@ pub const Opcode = enum {
 pub const OperandType = enum {
     register,
     immediate,
-    memory_calculation_no_disp,
+    mem_calc_no_disp,
+    mem_calc_with_disp,
 };
 
 pub const Operand = union(OperandType) {
     register: Register,
     immediate: i16,
-    memory_calculation_no_disp: MemoryCalculationNoDisp,
+    mem_calc_no_disp: MemCalcNoDisp,
+    mem_calc_with_disp: MemCalc,
 };
 
 pub const Instruction = struct {

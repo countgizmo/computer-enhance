@@ -168,12 +168,12 @@ fn decodeSource(decoding: Decoding) instruction.Operand {
             if (decoding.d == 0) {
                 const calculation_idx: u8 = decoding.reg;
                 return .{
-                    .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+                    .mem_calc_no_disp = .{ .mem_calc = instruction.MemCalcTable[calculation_idx] },
                 };
             } else {
                 const calculation_idx: u8 = decoding.rm;
                 return .{
-                    .memory_calculation_no_disp = .{ .registers = instruction.RegistersNoDisp[calculation_idx] },
+                    .mem_calc_no_disp = .{ .mem_calc = instruction.MemCalcTable[calculation_idx] },
                 };
             }
         }
@@ -182,18 +182,18 @@ fn decodeSource(decoding: Decoding) instruction.Operand {
             if (decoding.d == 0) {
                 const calculation_idx: u8 = decoding.reg;
                 var result = .{
-                    .mem_calc_with_disp = instruction.MemCalcWithDispTable[calculation_idx],
+                    .mem_calc_with_disp = instruction.MemCalcTable[calculation_idx],
                 };
 
-                result.mem_calc_with_disp.disp = . { .byte = decoding.disp_lo.? };
+                result.mem_calc_with_disp.disp = .{ .byte = decoding.disp_lo.? };
                 return result;
             } else {
                 const calculation_idx: u8 = decoding.rm;
                 var result = .{
-                    .mem_calc_with_disp = instruction.MemCalcWithDispTable[calculation_idx],
+                    .mem_calc_with_disp = instruction.MemCalcTable[calculation_idx],
                 };
 
-                result.mem_calc_with_disp.disp = . { .byte = decoding.disp_lo.? };
+                result.mem_calc_with_disp.disp = .{ .byte = decoding.disp_lo.? };
                 return result;
             }
         }
@@ -393,8 +393,8 @@ test "decoding effective memory address calculation to register" {
     try expect(result.?.opcode == Opcode.mov);
     try expect(result.?.size == 2);
     try expectEqual(instruction.Register.al, result.?.operand1.register);
-    try expect(result.?.operand2.?.memory_calculation_no_disp.registers[0] == Register.bx);
-    try expect(result.?.operand2.?.memory_calculation_no_disp.registers[1] == Register.si);
+    try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register1 == Register.bx);
+    try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register2 == Register.si);
 }
 
 test "decoding effective memory address calculation with displacement" {

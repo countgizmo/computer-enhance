@@ -1,6 +1,5 @@
 const std = @import("std");
 const fmt = std.fmt;
-const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const log = std.log;
 const expect = std.testing.expect;
@@ -12,12 +11,6 @@ const Register = instruction.Register;
 const Operand = instruction.Operand;
 const MemoryCalculation = instruction.MemoryCalculation;
 
-pub const mem_calc_human_readable = [_][]const u8{
-    "[bx + si]",
-    "[bx + di]",
-    "[bp + si]",
-    "[bp + di]",};
-
 fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
     var result: []u8 = switch (operand) {
         .register => |val| {
@@ -26,9 +19,52 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
         .immediate => |val| {
             return fmt.allocPrint(allocator, "{d}", .{val});
         },
-        .memory_calculation => |val| {
-            const hr = mem_calc_human_readable[@enumToInt(val)];
-            return fmt.allocPrint(allocator, "{s}", .{hr});
+        .mem_calc_no_disp => |val| {
+            if (val.mem_calc.register2 != null) {
+                return fmt.allocPrint(allocator,
+                    "[{s} + {s}]", .{@tagName(val.mem_calc.register1), @tagName(val.mem_calc.register2.?)});
+            }
+            return fmt.allocPrint(allocator,
+                "[{s}]", .{@tagName(val.mem_calc.register1)});
+        },
+        .mem_calc_with_disp => |val| {
+            if (val.register2 != null) {
+                if (val.disp) |disp| {
+                    switch (disp) {
+                        .byte => |byte_disp| {
+                            return fmt.allocPrint(allocator,
+                                "[{s} + {s} + {d}]", .{@tagName(val.register1), @tagName(val.register2.?), byte_disp});
+                        },
+                        .word => |word_disp| {
+                            return fmt.allocPrint(allocator,
+                                "[{s} + {s} + {d}]", .{@tagName(val.register1), @tagName(val.register2.?), word_disp});
+                        },
+                    }
+                } else {
+                    return fmt.allocPrint(allocator,
+                        "[{s} + {s}]", .{@tagName(val.register1), @tagName(val.register2.?)});
+                }
+            }
+
+            if (val.disp) |disp| {
+                switch (disp) {
+                    .byte => |byte_disp| {
+                        if (byte_disp > 0) {
+                            return fmt.allocPrint(allocator,
+                                "[{s} + {d}]", .{@tagName(val.register1), byte_disp});
+                        }
+                    },
+                    .word => |word_disp| {
+                        if (word_disp > 0) {
+                            return fmt.allocPrint(allocator,
+                                "[{s} + {d}]", .{@tagName(val.register1), word_disp});
+                        }
+                    }
+                }
+            }
+
+            return fmt.allocPrint(allocator,
+                "[{s}]", .{@tagName(val.register1)});
         },
     };
 
@@ -63,6 +99,7 @@ pub fn printHeader(file_name: []const u8) !void {
 }
 
 test "print mov" {
+    var allocator = std.testing.allocator;
     const inst: Instruction = .{
         .opcode = Opcode.mov,
         .operand1 = .{
@@ -72,9 +109,9 @@ test "print mov" {
             .immediate = 3456,
         },
     };
-    var buf: [256]u8 = undefined;
     const expected = "mov al 3456";
-    const actual = try bufPrintInstruction(&buf, inst);
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
 
@@ -86,7 +123,12 @@ test "print memory calculation" {
             .register = Register.al,
         },
         .operand2 = .{
-            .memory_calculation = MemoryCalculation.bx_si,
+            .mem_calc_no_disp = .{
+                .mem_calc = .{
+                    .register1 = Register.bx,
+                    .register2 = Register.si,
+                },
+            },
         },
     };
     const expected = "mov al [bx + si]";
@@ -94,3 +136,67 @@ test "print memory calculation" {
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
+
+test "print memory calculation with 8-bit displacemenet" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = Register.al,
+        },
+        .operand2 = .{
+            .mem_calc_with_disp = .{
+                .register1 = Register.bx,
+                .register2 = Register.si,
+                .disp = .{ .byte = 4, },
+            },
+        },
+    };
+    const expected = "mov al [bx + si + 4]";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print memory calculation with zero 8-bit displacemenet" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = Register.al,
+        },
+        .operand2 = .{
+            .mem_calc_with_disp = .{
+                .register1 = Register.bx,
+                .disp = .{ .byte = 0, },
+            },
+        },
+    };
+    const expected = "mov al [bx]";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+
+test "print memory calculation with 16-bit displacemenet" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = Register.al,
+        },
+        .operand2 = .{
+            .mem_calc_with_disp = .{
+                .register1 = Register.bx,
+                .register2 = Register.si,
+                .disp = .{ .word = 4999, },
+            },
+        },
+    };
+    const expected = "mov al [bx + si + 4999]";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
