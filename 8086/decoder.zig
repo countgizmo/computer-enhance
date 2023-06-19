@@ -148,6 +148,18 @@ fn decodeDestination(decoding: Decoding) instruction.Operand {
     };
 }
 
+fn getMemCalc(decoding: Decoding) instruction.MemCalc {
+    var calculation_idx: u8 = undefined;
+
+    if (decoding.d == 0) {
+        calculation_idx = decoding.reg;
+    } else {
+        calculation_idx = decoding.rm;
+    }
+
+    return instruction.MemCalcTable[calculation_idx];
+}
+
 fn decodeSource(decoding: Decoding) instruction.Operand {
     if (decoding.mod) |mod| {
         if (mod == 0b11) {
@@ -165,37 +177,32 @@ fn decodeSource(decoding: Decoding) instruction.Operand {
         }
 
         if (mod == 0b00) {
-            if (decoding.d == 0) {
-                const calculation_idx: u8 = decoding.reg;
-                return .{
-                    .mem_calc_no_disp = .{ .mem_calc = instruction.MemCalcTable[calculation_idx] },
-                };
-            } else {
-                const calculation_idx: u8 = decoding.rm;
-                return .{
-                    .mem_calc_no_disp = .{ .mem_calc = instruction.MemCalcTable[calculation_idx] },
-                };
-            }
+            const mem_calc = getMemCalc(decoding);
+            return .{
+                .mem_calc_no_disp = .{ .mem_calc = mem_calc },
+            };
         }
 
         if (mod == 0b01) {
-            if (decoding.d == 0) {
-                const calculation_idx: u8 = decoding.reg;
-                var result = .{
-                    .mem_calc_with_disp = instruction.MemCalcTable[calculation_idx],
-                };
+            var mem_calc = getMemCalc(decoding);
+            mem_calc.disp = .{
+                .byte = decoding.disp_lo.?,
+            };
 
-                result.mem_calc_with_disp.disp = .{ .byte = decoding.disp_lo.? };
-                return result;
-            } else {
-                const calculation_idx: u8 = decoding.rm;
-                var result = .{
-                    .mem_calc_with_disp = instruction.MemCalcTable[calculation_idx],
-                };
+            return .{
+                .mem_calc_with_disp = mem_calc,
+            };
+        }
 
-                result.mem_calc_with_disp.disp = .{ .byte = decoding.disp_lo.? };
-                return result;
-            }
+        if (mod == 0b10) {
+            var mem_calc = getMemCalc(decoding);
+            mem_calc.disp = .{
+                .word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
+            };
+
+            return .{
+                .mem_calc_with_disp = mem_calc,
+            };
         }
     }
 
@@ -397,7 +404,7 @@ test "decoding effective memory address calculation to register" {
     try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register2 == Register.si);
 }
 
-test "decoding effective memory address calculation with displacement" {
+test "decoding effective memory address calculation with 8-bit displacement" {
     const encoding: Encoding = .{
         .opcode = Opcode.mov,
         .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
@@ -422,6 +429,25 @@ test "decoding effective memory address calculation with displacement" {
     try expectEqual(Register.bx, result_2.?.operand2.?.mem_calc_with_disp.register1);
     try expectEqual(Register.si, result_2.?.operand2.?.mem_calc_with_disp.register2.?);
     try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.?.byte == 4);
+}
+
+
+test "decoding effective memory address calculation with 16-bit displacement" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+
+    // mov al, [bx + si + 4999]
+
+    const bytes_buffer_2 = [4]u8 { 0b10001010, 0b10000000, 0b10000111, 0b00010011 };
+    const result_2 = decodeInstruction(&bytes_buffer_2, 0, encoding);
+
+    try expect(result_2.?.opcode == Opcode.mov);
+    try expectEqual(Register.al, result_2.?.operand1.register);
+    try expectEqual(Register.bx, result_2.?.operand2.?.mem_calc_with_disp.register1);
+    try expectEqual(Register.si, result_2.?.operand2.?.mem_calc_with_disp.register2.?);
+    try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.?.word == 4999);
 }
 
 
