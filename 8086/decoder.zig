@@ -132,31 +132,6 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u8
     return shifted_num & mask;
 }
 
-fn decodeDestination(decoding: Decoding) instruction.Operand {
-    if (decoding.mod) |mod| {
-        if (mod == 0b11) {
-            if (decoding.d == 1) {
-                const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-                return .{
-                    .register = @intToEnum(instruction.Register, register_idx),
-                };
-            } else {
-                const register_idx: u8 = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
-                return .{
-                    .register = @intToEnum(instruction.Register, register_idx),
-                };
-            }
-        }
-    }
-
-    //TODO(evgheni): provide sane default return or null or something
-    // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
-    const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-    return .{
-        .register = @intToEnum(instruction.Register, register_idx),
-    };
-}
-
 fn getRegister(decoding: Decoding, op_position: OperandPosition) Register {
     var register_idx: u8 = undefined;
 
@@ -191,7 +166,7 @@ fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Ope
     if (decoding.mod.? == 0b01) {
         var mem_calc = instruction.MemCalcTable[decoding.rm];
         mem_calc.disp = .{
-            .byte = decoding.disp_lo.?,
+            .byte = @bitCast(i8, decoding.disp_lo.?),
         };
 
         return .{
@@ -201,8 +176,9 @@ fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Ope
 
     if (decoding.mod.? == 0b10) {
         var mem_calc = instruction.MemCalcTable[decoding.rm];
+        const word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?;
         mem_calc.disp = .{
-            .word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
+            .word = @bitCast(i16, word),
         };
 
         return .{
@@ -520,6 +496,36 @@ test "decoding multiple source address calculations" {
     const instructions = try decode(allocator, &bytes_buffer, bytes_buffer.len, 0);
     allocator.free(instructions.?);
     try expect(instructions.?.len == 2);
+}
+
+test "decoding signed displacement" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+
+    // mov ax, [bx + di - 37]
+
+    const bytes_buffer = [3]u8 { 0b10001011, 0b01000001, 0b11011011 };
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
+
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(Register.ax, result.?.operand1.register);
+    try expectEqual(Register.bx, result.?.operand2.?.mem_calc_with_disp.register1);
+    try expectEqual(Register.di, result.?.operand2.?.mem_calc_with_disp.register2.?);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.byte == -37);
+
+    // mov [si - 300], cx
+
+    const bytes_buffer_2 = [4]u8 { 0b10001001, 0b10001100, 0b11010100, 0b11111110 };
+    const result_2 = try decodeInstruction(&bytes_buffer_2, 0, encoding);
+
+    try expect(result_2.?.opcode == Opcode.mov);
+
+    try expectEqual(Register.si, result_2.?.operand1.mem_calc_with_disp.register1);
+    try expect(result_2.?.operand1.mem_calc_with_disp.disp.?.word == -300);
+
+    try expectEqual(Register.cx, result_2.?.operand2.?.register);
 }
 
 test "string compare" {

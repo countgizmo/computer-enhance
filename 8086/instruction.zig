@@ -24,8 +24,8 @@ pub const Register = enum {
 
 
 const Displacement = union(enum) {
-    byte: u8,
-    word: u16,
+    byte: i8,
+    word: i16,
 };
 
 pub const MemCalc = struct {
