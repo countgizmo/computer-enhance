@@ -78,7 +78,7 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     if (inst.operand2) |op2| {
         const operand2 = try operandToStr(allocator, op2);
         defer allocator.free(operand2);
-        return try fmt.allocPrint(allocator, "{s} {s} {s}", .{ @tagName(inst.opcode), operand1, operand2 });
+        return try fmt.allocPrint(allocator, "{s} {s}, {s}", .{ @tagName(inst.opcode), operand1, operand2 });
     } else {
         return try fmt.allocPrint(allocator, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
     }

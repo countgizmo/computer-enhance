@@ -10,6 +10,15 @@ const Opcode = instruction.Opcode;
 const Register = instruction.Register;
 const MemoryCalculationNoDisp = instruction.MemoryCalculationNoDisp;
 
+const DecoderError = error {
+    ModNotFound,
+};
+
+const OperandPosition = enum {
+    source,
+    destination,
+};
+
 const Encoding = struct {
     opcode: Opcode,
     bits_enc: []const u8,
@@ -148,84 +157,114 @@ fn decodeDestination(decoding: Decoding) instruction.Operand {
     };
 }
 
-fn getMemCalc(decoding: Decoding) instruction.MemCalc {
-    var calculation_idx: u8 = undefined;
+fn getRegister(decoding: Decoding, op_position: OperandPosition) Register {
+    var register_idx: u8 = undefined;
 
-    if (decoding.d == 0) {
-        calculation_idx = decoding.reg;
-    } else {
-        calculation_idx = decoding.rm;
+    switch (op_position) {
+        .source => {
+            if (decoding.d == 0) {
+                register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+            } else {
+                register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+            }
+        },
+        .destination=> {
+            if (decoding.d == 1) {
+                register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+            } else {
+                register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+            }
+        },
     }
 
-    return instruction.MemCalcTable[calculation_idx];
+    return @intToEnum(instruction.Register, register_idx);
 }
 
-fn decodeSource(decoding: Decoding) instruction.Operand {
+fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Operand {
+    if (decoding.mod.? == 0b00) {
+        const mem_calc = instruction.MemCalcTable[decoding.rm];
+        return .{
+            .mem_calc_no_disp = .{ .mem_calc = mem_calc },
+        };
+    }
+
+    if (decoding.mod.? == 0b01) {
+        var mem_calc = instruction.MemCalcTable[decoding.rm];
+        mem_calc.disp = .{
+            .byte = decoding.disp_lo.?,
+        };
+
+        return .{
+            .mem_calc_with_disp = mem_calc,
+        };
+    }
+
+    if (decoding.mod.? == 0b10) {
+        var mem_calc = instruction.MemCalcTable[decoding.rm];
+        mem_calc.disp = .{
+            .word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
+        };
+
+        return .{
+            .mem_calc_with_disp = mem_calc,
+        };
+    }
+
+    return DecoderError.ModNotFound;
+}
+
+fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.Operand {
     if (decoding.mod) |mod| {
         if (mod == 0b11) {
-            if (decoding.d == 0) {
-                const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-                return .{
-                    .register = @intToEnum(instruction.Register, register_idx),
-                };
-            } else {
-                const register_idx: u8 = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
-                return .{
-                    .register = @intToEnum(instruction.Register, register_idx),
-                };
+            return .{
+                .register = getRegister(decoding, op_position),
+            };
+        } else {
+            if (op_position == .source) {
+                if (decoding.d == 0) {
+                    return .{
+                        .register = getRegister(decoding, op_position),
+                    };
+                } else {
+                    return try getAddressCalculationOperand(decoding);
+                }
             }
-        }
 
-        if (mod == 0b00) {
-            const mem_calc = getMemCalc(decoding);
-            return .{
-                .mem_calc_no_disp = .{ .mem_calc = mem_calc },
-            };
-        }
-
-        if (mod == 0b01) {
-            var mem_calc = getMemCalc(decoding);
-            mem_calc.disp = .{
-                .byte = decoding.disp_lo.?,
-            };
-
-            return .{
-                .mem_calc_with_disp = mem_calc,
-            };
-        }
-
-        if (mod == 0b10) {
-            var mem_calc = getMemCalc(decoding);
-            mem_calc.disp = .{
-                .word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
-            };
-
-            return .{
-                .mem_calc_with_disp = mem_calc,
-            };
+            if (op_position == .destination) {
+                if (decoding.d == 1) {
+                    return .{
+                        .register = getRegister(decoding, op_position),
+                    };
+                } else {
+                    return try getAddressCalculationOperand(decoding);
+                }
+            }
         }
     }
 
-    if (decoding.data) |value_lo| {
-        if (decoding.dataw) |value_hi| {
-            return .{
-                .immediate = @as(i16, value_hi) << 8 | value_lo,
-            };
-        } else {
-            return .{
-                .immediate = value_lo,
-            };
+    if (op_position == .source) {
+        if (decoding.data) |value_lo| {
+            if (decoding.dataw) |value_hi| {
+                return .{
+                    .immediate = @as(i16, value_hi) << 8 | value_lo,
+                };
+            } else {
+                return .{
+                    .immediate = value_lo,
+                };
+            }
         }
     }
 
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
+    const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     return .{
-        .register = @intToEnum(instruction.Register, 0),
+        .register = @intToEnum(instruction.Register, register_idx),
     };
 }
 
-fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instruction.Instruction {
+fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?instruction.Instruction {
     var current_offset = offset;
     var key: [8]u8 = undefined;
     var value: u8 = undefined;
@@ -312,8 +351,8 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) ?instr
     }
     return .{
         .opcode = encoding.opcode,
-        .operand1 = decodeDestination(decoding),
-        .operand2 = decodeSource(decoding),
+        .operand1 = try decodeOperand(decoding, OperandPosition.destination),
+        .operand2 = try decodeOperand(decoding, OperandPosition.source),
         .size = current_offset - offset,
     };
 }
@@ -329,7 +368,7 @@ pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offse
         while (iterator.next()) |entry| {
             const key = entry.key_ptr.*;
             if (buffer[current_offset] & key[1] == key[0]) {
-                if (decodeInstruction(buffer, current_offset, entry.value_ptr.*)) |inst| {
+                if (try decodeInstruction(buffer, current_offset, entry.value_ptr.*)) |inst| {
                     try instructions.append(inst);
                     current_offset += inst.size;
                     break; //Note(evgheni): don't need to continue checking the map of opcodee
@@ -356,7 +395,7 @@ test "decoding instruction" {
         .opcode = Opcode.mov,
         .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
     };
-    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.cx, result.?.operand1.register);
@@ -370,7 +409,7 @@ test "decoding instruction - 8-bit immediate" {
     };
     const bytes_buffer = [2]u8{ 0b10110001, 0b00001100 };
 
-    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.cl, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate == 12);
@@ -383,7 +422,7 @@ test "decoding instruction - 16-bit immediate" {
     };
     const bytes_buffer = [3]u8{ 0b10111010, 0b01101100, 0b00001111 };
 
-    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.dx, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate == 3948);
@@ -395,7 +434,7 @@ test "decoding effective memory address calculation to register" {
         .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
     };
     const bytes_buffer = [2]u8{ 0b10001010, 0b00000000 };
-    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     try expect(result.?.opcode == Opcode.mov);
     try expect(result.?.size == 2);
@@ -410,7 +449,7 @@ test "decoding effective memory address calculation with 8-bit displacement" {
         .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
     };
     const bytes_buffer = [3]u8 { 0b10001011, 0b01010110, 0b00000000 };
-    const result = decodeInstruction(&bytes_buffer, 0, encoding);
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     // mov dx, [bp]
 
@@ -422,7 +461,7 @@ test "decoding effective memory address calculation with 8-bit displacement" {
     // mov ah, [bx + si + 4]
 
     const bytes_buffer_2 = [3]u8 { 0b10001010, 0b01100000, 0b00000100 };
-    const result_2 = decodeInstruction(&bytes_buffer_2, 0, encoding);
+    const result_2 = try decodeInstruction(&bytes_buffer_2, 0, encoding);
 
     try expect(result_2.?.opcode == Opcode.mov);
     try expectEqual(Register.ah, result_2.?.operand1.register);
@@ -440,14 +479,31 @@ test "decoding effective memory address calculation with 16-bit displacement" {
 
     // mov al, [bx + si + 4999]
 
-    const bytes_buffer_2 = [4]u8 { 0b10001010, 0b10000000, 0b10000111, 0b00010011 };
-    const result_2 = decodeInstruction(&bytes_buffer_2, 0, encoding);
+    const bytes_buffer = [4]u8 { 0b10001010, 0b10000000, 0b10000111, 0b00010011 };
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
-    try expect(result_2.?.opcode == Opcode.mov);
-    try expectEqual(Register.al, result_2.?.operand1.register);
-    try expectEqual(Register.bx, result_2.?.operand2.?.mem_calc_with_disp.register1);
-    try expectEqual(Register.si, result_2.?.operand2.?.mem_calc_with_disp.register2.?);
-    try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.?.word == 4999);
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(Register.al, result.?.operand1.register);
+    try expectEqual(Register.bx, result.?.operand2.?.mem_calc_with_disp.register1);
+    try expectEqual(Register.si, result.?.operand2.?.mem_calc_with_disp.register2.?);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.word == 4999);
+}
+
+test "decoding memory address calculation in destination" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+
+    // mov [bx + di], cx
+
+    const bytes_buffer = [2]u8 { 0b10001001, 0b00001001 };
+    const result = try decodeInstruction(&bytes_buffer, 0, encoding);
+
+    try expect(result.?.opcode == Opcode.mov);
+    try expectEqual(Register.bx, result.?.operand1.mem_calc_no_disp.mem_calc.register1);
+    try expectEqual(Register.di, result.?.operand1.mem_calc_no_disp.mem_calc.register2.?);
+    try expectEqual(Register.cx, result.?.operand2.?.register);
 }
 
 
@@ -483,14 +539,4 @@ test "extract bits" {
             offset += 1;
         }
     }
-}
-
-test "shifting" {
-    const test_size = 6;
-    const num: u8 = 0b10001001;
-    const shifted_num = num >> (8 - test_size);
-    const mask: u8 = (1 << test_size) - 1;
-
-    log.warn("original {b} shifted {b} masked {b}", .{ num, shifted_num, shifted_num & mask });
-    log.warn("mask unshifted {b}", .{(1 << 8) - 1});
 }
