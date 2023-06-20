@@ -95,7 +95,7 @@ pub fn printInstruction(allocator: Allocator, inst: Instruction) !void {
 pub fn printHeader(file_name: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("; FILE: {s}\n", .{file_name});
-    try stdout.print("; bits 16\n\n", .{});
+    try stdout.print("bits 16\n\n", .{});
 }
 
 test "print mov" {
@@ -109,7 +109,7 @@ test "print mov" {
             .immediate = 3456,
         },
     };
-    const expected = "mov al 3456";
+    const expected = "mov al, 3456";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
@@ -131,7 +131,7 @@ test "print memory calculation" {
             },
         },
     };
-    const expected = "mov al [bx + si]";
+    const expected = "mov al, [bx + si]";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
@@ -152,7 +152,7 @@ test "print memory calculation with 8-bit displacemenet" {
             },
         },
     };
-    const expected = "mov al [bx + si + 4]";
+    const expected = "mov al, [bx + si + 4]";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
@@ -172,7 +172,7 @@ test "print memory calculation with zero 8-bit displacemenet" {
             },
         },
     };
-    const expected = "mov al [bx]";
+    const expected = "mov al, [bx]";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
@@ -194,7 +194,7 @@ test "print memory calculation with 16-bit displacemenet" {
             },
         },
     };
-    const expected = "mov al [bx + si + 4999]";
+    const expected = "mov al, [bx + si + 4999]";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);

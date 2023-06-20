@@ -322,7 +322,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 },
                 .disp_hi => {
                     if (decoding.mod) |mod| {
-                        if (mod == 0b11 or mod == 0b00) {
+                        if (mod == 0b11 or mod == 0b00 or mod == 0b01) {
                             break;
                         }
                     }
@@ -349,6 +349,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
             key = undefined;
         }
     }
+
     return .{
         .opcode = encoding.opcode,
         .operand1 = try decodeOperand(decoding, OperandPosition.destination),
@@ -506,6 +507,20 @@ test "decoding memory address calculation in destination" {
     try expectEqual(Register.cx, result.?.operand2.?.register);
 }
 
+test "decoding multiple source address calculations" {
+    var allocator = std.testing.allocator;
+
+    // mov ah, [bx + si + 4]
+    // mov al, [bx + si + 4999]
+    const bytes_buffer = [7]u8 {
+        0b10001010, 0b01100000, 0b00000100,
+        0b10001010, 0b10000000, 0b10000111, 0b00010011
+    };
+
+    const instructions = try decode(allocator, &bytes_buffer, bytes_buffer.len, 0);
+    allocator.free(instructions.?);
+    try expect(instructions.?.len == 2);
+}
 
 test "string compare" {
     var key_buffer: [8]u8 = undefined;
