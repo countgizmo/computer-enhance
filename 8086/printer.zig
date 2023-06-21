@@ -17,7 +17,10 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
             return fmt.allocPrint(allocator, "{s}", .{@tagName(val)});
         },
         .immediate => |val| {
-            return fmt.allocPrint(allocator, "{d}", .{val});
+            if (val.size) |data_size| {
+                return fmt.allocPrint(allocator, "{s} {d}", .{@tagName(data_size), val.value});
+            }
+            return fmt.allocPrint(allocator, "{d}", .{val.value});
         },
         .mem_calc_no_disp => |val| {
             if (val.mem_calc.register2 != null) {
@@ -106,7 +109,7 @@ test "print mov" {
             .register = Register.al,
         },
         .operand2 = .{
-            .immediate = 3456,
+            .immediate = .{ .value = 3456 },
         },
     };
     const expected = "mov al, 3456";
@@ -200,3 +203,52 @@ test "print memory calculation with 16-bit displacemenet" {
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
 
+test "print destination mem calc with explicit byte size in source" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .mem_calc_no_disp = .{
+                .mem_calc = .{
+                    .register1 = Register.bp,
+                    .register2 = Register.di,
+                },
+            },
+        },
+        .operand2 = .{
+            .immediate = .{
+                .value = 7,
+                .size = .byte,
+            },
+        },
+    };
+    const expected = "mov [bp + di], byte 7";
+
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print destination mem calc with explicit word size in source" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .mem_calc_with_disp = .{
+                    .register1 = Register.di,
+                    .disp = .{ .word = 901 },
+            },
+        },
+        .operand2 = .{
+            .immediate = .{
+                .value = 347,
+                .size = .word,
+            },
+        },
+    };
+
+    const expected = "mov [di + 901], word 347";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}

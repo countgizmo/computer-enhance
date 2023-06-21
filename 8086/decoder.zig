@@ -12,6 +12,7 @@ const MemoryCalculationNoDisp = instruction.MemoryCalculationNoDisp;
 
 const DecoderError = error {
     ModNotFound,
+    DataNotFound,
 };
 
 const OperandPosition = enum {
@@ -57,6 +58,7 @@ const Identifier = enum {
     disp_hi,
     data,
     dataw,
+    pad,
 };
 
 fn keyToIdentifier(key_buffer: []u8) Identifier {
@@ -80,6 +82,8 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
         return .d;
     } else if (std.mem.startsWith(u8, key_buffer, "w")) {
         return .w;
+    } else if (std.mem.startsWith(u8, key_buffer, "pad")) {
+        return .pad;
     }
 
     return .none;
@@ -97,7 +101,9 @@ fn createMapOfOpcodes() !*std.AutoArrayHashMap([2]u8, Encoding) {
 
     // Immediate to register
     try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8" });
-    //try map.put(0b1100011_0, .{ .opcode = Opcode.mov, .bits_enc = "opcdoe7:d0:w1:mod2:reg3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
+
+    // Immediate to register/memory
+    try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
 
     return &map;
 }
@@ -189,7 +195,42 @@ fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Ope
     return DecoderError.ModNotFound;
 }
 
+fn getDataOperand(decoding: Decoding) !instruction.Operand {
+    if (decoding.data) |data_lo| {
+        var operand: instruction.Operand = undefined;
+
+        if (decoding.dataw) |data_hi| {
+            operand = .{
+                .immediate = .{ .value = @as(i16, data_hi) << 8 | data_lo },
+            };
+        } else {
+            operand = .{
+                .immediate = .{ .value = data_lo },
+            };
+        }
+
+        // Checking if we're not in the register mode
+        if (decoding.mod) |mod| {
+            if (mod != 0b11 and decoding.w == 0) {
+                operand.immediate.size = .byte;
+            }
+
+            if (mod != 0b11 and decoding.w == 1) {
+                operand.immediate.size = .word;
+            }
+        }
+
+        return operand;
+    }
+
+    return DecoderError.DataNotFound;
+}
+
 fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.Operand {
+    if (op_position == .source and decoding.data != null) {
+        return try getDataOperand(decoding);
+    }
+
     if (decoding.mod) |mod| {
         if (mod == 0b11) {
             return .{
@@ -218,19 +259,6 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.
         }
     }
 
-    if (op_position == .source) {
-        if (decoding.data) |value_lo| {
-            if (decoding.dataw) |value_hi| {
-                return .{
-                    .immediate = @as(i16, value_hi) << 8 | value_lo,
-                };
-            } else {
-                return .{
-                    .immediate = value_lo,
-                };
-            }
-        }
-    }
 
     //TODO(evgheni): provide sane default return or null or something
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
@@ -270,7 +298,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
             const id = keyToIdentifier(&key);
             const size = charToDigit(value);
             const bit_value = extractBits(buffer, &start_bit, current_offset, size);
-           // log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
+            //log.warn("id = {c} size {d} value = {b}", .{ @tagName(id), size, bit_value });
 
             switch (id) {
                 .mod => {
@@ -291,7 +319,8 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 .disp_lo => {
                     if (decoding.mod) |mod| {
                         if (mod == 0b11 or mod == 0b00) {
-                            break;
+                            i = 0;
+                            continue;
                         }
                     }
                     decoding.disp_lo = bit_value;
@@ -299,7 +328,8 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 .disp_hi => {
                     if (decoding.mod) |mod| {
                         if (mod == 0b11 or mod == 0b00 or mod == 0b01) {
-                            break;
+                            i = 0;
+                            continue;
                         }
                     }
                     decoding.disp_hi = bit_value;
@@ -309,7 +339,8 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 },
                 .dataw => {
                     if (decoding.w == 0) {
-                        break;
+                        i = 0;
+                        continue;
                     }
                     decoding.dataw = bit_value;
                 },
@@ -389,7 +420,7 @@ test "decoding instruction - 8-bit immediate" {
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.cl, result.?.operand1.register);
-    try expect(result.?.operand2.?.immediate == 12);
+    try expect(result.?.operand2.?.immediate.value == 12);
 }
 
 test "decoding instruction - 16-bit immediate" {
@@ -402,7 +433,7 @@ test "decoding instruction - 16-bit immediate" {
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(instruction.Register.dx, result.?.operand1.register);
-    try expect(result.?.operand2.?.immediate == 3948);
+    try expect(result.?.operand2.?.immediate.value == 3948);
 }
 
 test "decoding effective memory address calculation to register" {
@@ -526,6 +557,36 @@ test "decoding signed displacement" {
     try expect(result_2.?.operand1.mem_calc_with_disp.disp.?.word == -300);
 
     try expectEqual(Register.cx, result_2.?.operand2.?.register);
+}
+
+test "decoding explicit sizes" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
+    };
+
+    // mov [bp + di], byte 7
+
+    const bytes_buffer = [3]u8 { 0b11000110, 0b00000011, 0b00000111 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.bp, result.operand1.mem_calc_no_disp.mem_calc.register1);
+        try expectEqual(Register.di, result.operand1.mem_calc_no_disp.mem_calc.register2.?);
+
+        try expect(result.operand2.?.immediate.value == 7);
+        try expectEqual(instruction.DataSize.byte, result.operand2.?.immediate.size.?);
+    }
+
+    //mov [di + 901], word 347
+    const bytes_buffer_2 = [6]u8 { 0b11000111, 0b10000101, 0b10000101, 0b00000011, 0b01011011, 0b00000001 };
+    if (try decodeInstruction(&bytes_buffer_2, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.di, result.operand1.mem_calc_with_disp.register1);
+        try expect(result.operand1.mem_calc_with_disp.disp.?.word == 901);
+
+        try expect(result.operand2.?.immediate.value == 347);
+        try expectEqual(instruction.DataSize.word, result.operand2.?.immediate.size.?);
+    }
 }
 
 test "string compare" {

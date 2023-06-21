@@ -43,7 +43,7 @@ pub const MemCalcTable = [_]MemCalc {
     .{ .register1 = .bx, .register2 = .si, },
     .{ .register1 = .bx, .register2 = .di, },
     .{ .register1 = .bp, .register2 = .si, },
-    .{ .register1 = .bp, .register2 = .si, },
+    .{ .register1 = .bp, .register2 = .di, },
     .{ .register1 = .si, },
     .{ .register1 = .di, },
     .{ .register1 = .bp, },
@@ -54,16 +54,19 @@ pub const Opcode = enum {
     mov,
 };
 
-pub const OperandType = enum {
-    register,
-    immediate,
-    mem_calc_no_disp,
-    mem_calc_with_disp,
+pub const DataSize = enum {
+    byte,
+    word,
 };
 
-pub const Operand = union(OperandType) {
+const Immediate = struct {
+    value: i16,
+    size: ?DataSize = null,
+};
+
+pub const Operand = union(enum) {
     register: Register,
-    immediate: i16,
+    immediate: Immediate,
     mem_calc_no_disp: MemCalcNoDisp,
     mem_calc_with_disp: MemCalc,
 };
