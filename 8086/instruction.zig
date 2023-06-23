@@ -69,6 +69,7 @@ pub const Operand = union(enum) {
     immediate: Immediate,
     mem_calc_no_disp: MemCalcNoDisp,
     mem_calc_with_disp: MemCalc,
+    direct_address: u16,
 };
 
 pub const Instruction = struct {

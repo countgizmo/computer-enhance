@@ -69,6 +69,9 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
             return fmt.allocPrint(allocator,
                 "[{s}]", .{@tagName(val.register1)});
         },
+        .direct_address => |val| {
+            return fmt.allocPrint( allocator, "[{d}]", .{val});
+        }
     };
 
     return result;
@@ -248,6 +251,24 @@ test "print destination mem calc with explicit word size in source" {
     };
 
     const expected = "mov [di + 901], word 347";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print direct address in source" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = Register.bp,
+        },
+        .operand2 = .{
+            .direct_address = 5,
+        },
+    };
+
+    const expected = "mov bp, [5]";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);

@@ -226,6 +226,20 @@ fn getDataOperand(decoding: Decoding) !instruction.Operand {
     return DecoderError.DataNotFound;
 }
 
+fn isDirectAddress(decoding: Decoding) bool {
+    if (decoding.mod) |mod| {
+        return (mod == 0b00 and decoding.rm == 0b110);
+    }
+
+    return false;
+}
+
+fn getDirectAddressOperand(decoding: Decoding) instruction.Operand {
+    return .{
+        .direct_address = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
+    };
+}
+
 fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.Operand {
     if (op_position == .source and decoding.data != null) {
         return try getDataOperand(decoding);
@@ -236,6 +250,8 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.
             return .{
                 .register = getRegister(decoding, op_position),
             };
+        } else if (isDirectAddress(decoding) and op_position == .source) {
+            return getDirectAddressOperand(decoding);
         } else {
             if (op_position == .source) {
                 if (decoding.d == 0) {
@@ -318,7 +334,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 },
                 .disp_lo => {
                     if (decoding.mod) |mod| {
-                        if (mod == 0b11 or mod == 0b00) {
+                        if ((mod == 0b11 or mod == 0b00) and !isDirectAddress(decoding)) {
                             i = 0;
                             continue;
                         }
@@ -327,7 +343,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 },
                 .disp_hi => {
                     if (decoding.mod) |mod| {
-                        if (mod == 0b11 or mod == 0b00 or mod == 0b01) {
+                        if ((mod == 0b11 or mod == 0b00 or mod == 0b01) and !isDirectAddress(decoding)) {
                             i = 0;
                             continue;
                         }
@@ -586,6 +602,31 @@ test "decoding explicit sizes" {
 
         try expect(result.operand2.?.immediate.value == 347);
         try expectEqual(instruction.DataSize.word, result.operand2.?.immediate.size.?);
+    }
+}
+
+test "decoding direct address" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+
+    // mov bp, [5]
+    const bytes_buffer = [_]u8 { 0b10001011, 0b00101110, 0b00000101, 0b00000000 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.bp, result.operand1.register);
+
+        try expect(result.operand2.?.direct_address == 5);
+    }
+
+    // mov bx, [3458]
+    const bytes_buffer_2 = [_]u8 { 0b10001011, 0b00011110, 0b10000010, 0b00001101 };
+    if (try decodeInstruction(&bytes_buffer_2, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.bx, result.operand1.register);
+
+        try expect(result.operand2.?.direct_address == 3458);
     }
 }
 
