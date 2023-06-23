@@ -13,6 +13,7 @@ const MemoryCalculationNoDisp = instruction.MemoryCalculationNoDisp;
 const DecoderError = error {
     ModNotFound,
     DataNotFound,
+    AddressNotFound,
 };
 
 const OperandPosition = enum {
@@ -36,6 +37,8 @@ const Decoding = struct {
     dataw: ?u8 = null,
     disp_lo: ?u8 = null,
     disp_hi: ?u8 = null,
+    addr_lo: ?u8 = null,
+    addr_hi: ?u8 = null,
 };
 
 fn isNumber(ch: u8) bool {
@@ -59,11 +62,17 @@ const Identifier = enum {
     data,
     dataw,
     pad,
+    addr_lo,
+    addr_hi,
 };
 
 fn keyToIdentifier(key_buffer: []u8) Identifier {
     if (std.mem.startsWith(u8, key_buffer, "opcode")) {
         return .opcode;
+    } else if (std.mem.startsWith(u8, key_buffer, "addr-lo")) {
+        return .addr_lo;
+    } else if (std.mem.startsWith(u8, key_buffer, "addr-hi")) {
+        return .addr_hi;
     } else if (std.mem.startsWith(u8, key_buffer, "disp-lo")) {
         return .disp_lo;
     } else if (std.mem.startsWith(u8, key_buffer, "disp-hi")) {
@@ -97,13 +106,20 @@ fn createMapOfOpcodes() !*std.AutoArrayHashMap([2]u8, Encoding) {
     //
 
     // Register/memory to/from register/memory
-    try map.put(.{ 0b100010_00, 0b11111_000 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
+    try map.put(.{ 0b100010_00, 0b11111_000 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
 
     // Immediate to register
-    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8" });
+    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = .mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8" });
 
     // Immediate to register/memory
-    try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{ .opcode = Opcode.mov, .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
+    try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
+
+    // Memory to accumulator
+    // Note(evgheni): there's actually no d-bit, but there's a bit after w-bit that's 0 if mem->acc and 1 if acc->mem
+    // so we can use that as a "direction".
+    // Means the opcode part is not correct but I don't use it anyway.
+    try map.put(.{ 0b1010000_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
+    try map.put(.{ 0b1010001_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
 
     return &map;
 }
@@ -234,15 +250,47 @@ fn isDirectAddress(decoding: Decoding) bool {
     return false;
 }
 
-fn getDirectAddressOperand(decoding: Decoding) instruction.Operand {
+fn getDirectAddressDispOperand(decoding: Decoding) instruction.Operand {
     return .{
         .direct_address = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?,
     };
 }
 
+fn getDirectAddress(decoding: Decoding) !instruction.Operand {
+    if (decoding.addr_lo) |addr_lo| {
+        var operand: instruction.Operand = undefined;
+
+        if (decoding.addr_hi) |addr_hi| {
+            operand = .{
+                .direct_address = @as(u16, addr_hi) << 8 | addr_lo,
+            };
+        } else {
+            operand = .{
+                .direct_address = addr_lo,
+            };
+        }
+
+        return operand;
+    }
+
+    return DecoderError.AddressNotFound;
+}
+
 fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.Operand {
     if (op_position == .source and decoding.data != null) {
         return try getDataOperand(decoding);
+    }
+
+
+    if (decoding.addr_lo != null) {
+        if ((decoding.d == 0 and op_position == .destination) or
+            (decoding.d == 1 and op_position == .source)){
+            return .{
+                .register = .ax,
+            };
+        } else {
+            return try getDirectAddress(decoding);
+        }
     }
 
     if (decoding.mod) |mod| {
@@ -251,7 +299,7 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.
                 .register = getRegister(decoding, op_position),
             };
         } else if (isDirectAddress(decoding) and op_position == .source) {
-            return getDirectAddressOperand(decoding);
+            return getDirectAddressDispOperand(decoding);
         } else {
             if (op_position == .source) {
                 if (decoding.d == 0) {
@@ -359,6 +407,12 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                         continue;
                     }
                     decoding.dataw = bit_value;
+                },
+                .addr_lo => {
+                    decoding.addr_lo = bit_value;
+                },
+                .addr_hi => {
+                    decoding.addr_hi = bit_value;
                 },
                 else => {},
             }
@@ -629,6 +683,53 @@ test "decoding direct address" {
         try expect(result.operand2.?.direct_address == 3458);
     }
 }
+
+test "decoding memory to accumulator" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8",
+    };
+
+    // mov ax, [2555]
+    const bytes_buffer = [_]u8 { 0b10100001, 0b11111011, 0b00001001 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.ax, result.operand1.register);
+        try expect(result.operand2.?.direct_address == 2555);
+    }
+
+    // mov ax, [16]
+    const bytes_buffer_2 = [_]u8 { 0b10100001, 0b00010000, 0b00000000 };
+    if (try decodeInstruction(&bytes_buffer_2, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expectEqual(Register.ax, result.operand1.register);
+        try expect(result.operand2.?.direct_address == 16);
+    }
+}
+
+test "decoding accumulator to memory" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8",
+    };
+
+    // mov [2554], ax
+    const bytes_buffer = [_]u8 { 0b10100011, 0b11111010, 0b00001001 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expect(result.operand1.direct_address == 2554);
+        try expectEqual(Register.ax, result.operand2.?.register);
+    }
+
+    // mov [15], ax
+    const bytes_buffer_2 = [_]u8 { 0b10100011, 0b00001111, 0b00000000 };
+    if (try decodeInstruction(&bytes_buffer_2, 0, encoding)) |result| {
+        try expect(result.opcode == Opcode.mov);
+        try expect(result.operand1.direct_address == 15);
+        try expectEqual(Register.ax, result.operand2.?.register);
+    }
+}
+
 
 test "string compare" {
     var key_buffer: [8]u8 = undefined;

@@ -35,12 +35,16 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
                 if (val.disp) |disp| {
                     switch (disp) {
                         .byte => |byte_disp| {
+                            const sign: u8 = if (byte_disp >= 0) '+' else '-';
+                            const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
                             return fmt.allocPrint(allocator,
-                                "[{s} + {s} + {d}]", .{@tagName(val.register1), @tagName(val.register2.?), byte_disp});
+                                "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
                         },
                         .word => |word_disp| {
+                            const sign: u8 = if (word_disp >= 0) '+' else '-';
+                            const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
                             return fmt.allocPrint(allocator,
-                                "[{s} + {s} + {d}]", .{@tagName(val.register1), @tagName(val.register2.?), word_disp});
+                                "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
                         },
                     }
                 } else {
@@ -52,15 +56,19 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
             if (val.disp) |disp| {
                 switch (disp) {
                     .byte => |byte_disp| {
-                        if (byte_disp > 0) {
+                        if (byte_disp != 0) {
+                            const sign: u8 = if (byte_disp >= 0) '+' else '-';
+                            const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
                             return fmt.allocPrint(allocator,
-                                "[{s} + {d}]", .{@tagName(val.register1), byte_disp});
+                                "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
                         }
                     },
                     .word => |word_disp| {
-                        if (word_disp > 0) {
+                        if (word_disp != 0) {
+                            const sign: u8 = if (word_disp >= 0) '+' else '-';
+                            const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
                             return fmt.allocPrint(allocator,
-                                "[{s} + {d}]", .{@tagName(val.register1), word_disp});
+                                "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
                         }
                     }
                 }
@@ -163,6 +171,27 @@ test "print memory calculation with 8-bit displacemenet" {
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
+
+test "print memory calculation with displacemenet in destination" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .mem_calc_with_disp = .{
+                .register1 = Register.si,
+                .disp = .{ .word = -300, },
+            },
+        },
+        .operand2 = .{
+            .register = Register.cx,
+        },
+    };
+    const expected = "mov [si - 300], cx";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
 
 test "print memory calculation with zero 8-bit displacemenet" {
     var allocator = std.testing.allocator;
@@ -269,6 +298,24 @@ test "print direct address in source" {
     };
 
     const expected = "mov bp, [5]";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print accumulator to memory" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .direct_address = 2554,
+        },
+        .operand2 = .{
+            .register = Register.ax,
+        },
+    };
+
+    const expected = "mov [2554], ax";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
