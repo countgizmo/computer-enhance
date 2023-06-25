@@ -135,6 +135,9 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     // Immediate to register/memory
     try map.put(.{ 0b100000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8"});
 
+    // Immediate to accumulator
+    try map.put(.{ 0b0000010_0, 0b1111111_0 }, .{ .opcode = .add, .bits_enc = "opcode7:w1:data8:dataw8"});
+
     return map;
 }
 
@@ -235,7 +238,7 @@ fn getDataOperand(decoding: Decoding) !instruction.Operand {
             };
         } else {
             operand = .{
-                .immediate = .{ .value = data_lo },
+                .immediate = .{ .value = @bitCast(i8, data_lo) },
             };
         }
 

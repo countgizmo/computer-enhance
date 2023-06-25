@@ -11,15 +11,28 @@ const Register = instruction.Register;
 const Operand = instruction.Operand;
 const MemoryCalculation = instruction.MemoryCalculation;
 
+fn explicitType(allocator: Allocator, inst: Instruction) ?[]u8 {
+    if (inst.operand2) |operand2| {
+        switch (operand2) {
+            .immediate => |val| {
+                if (val.size) |val_size| {
+                    return fmt.allocPrint(allocator, "{s}", .{@tagName(val_size)}) catch null;
+                }
+            },
+            else => {
+                return null;
+            }
+        }
+    }
+    return null;
+}
+
 fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
     var result: []u8 = switch (operand) {
         .register => |val| {
             return fmt.allocPrint(allocator, "{s}", .{@tagName(val)});
         },
         .immediate => |val| {
-            if (val.size) |data_size| {
-                return fmt.allocPrint(allocator, "{s} {d}", .{@tagName(data_size), val.value});
-            }
             return fmt.allocPrint(allocator, "{d}", .{val.value});
         },
         .mem_calc_no_disp => |val| {
@@ -89,9 +102,24 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     const operand1 = try operandToStr(allocator, inst.operand1);
     defer allocator.free(operand1);
 
+
     if (inst.operand2) |op2| {
         const operand2 = try operandToStr(allocator, op2);
         defer allocator.free(operand2);
+        const explicit_type = explicitType(allocator, inst);
+
+        if (explicit_type) |et| {
+            defer allocator.free(et);
+            switch (inst.opcode) {
+                .add => {
+                    return try fmt.allocPrint(allocator, "{s} {s} {s}, {s}", .{ @tagName(inst.opcode), et, operand1, operand2 });
+                },
+                else => {
+                    return try fmt.allocPrint(allocator, "{s} {s}, {s} {s}", .{ @tagName(inst.opcode), operand1, et, operand2 });
+                }
+            }
+        }
+
         return try fmt.allocPrint(allocator, "{s} {s}, {s}", .{ @tagName(inst.opcode), operand1, operand2 });
     } else {
         return try fmt.allocPrint(allocator, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
@@ -336,6 +364,31 @@ test "print add immediate" {
     };
 
     const expected = "add si, 2";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print add explicit type" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.add,
+        .operand1 = .{
+            .mem_calc_with_disp = .{
+                .register1 = Register.bp,
+                .register2 = Register.si,
+                .disp = .{ .word = 1000, },
+            },
+        },
+        .operand2 = .{
+            .immediate = .{
+                .value = 29,
+                .size = .word,
+            },
+        },
+    };
+
+    const expected = "add word [bp + si + 1000], 29";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
