@@ -33,6 +33,7 @@ const Decoding = struct {
     rm: u8 = 0,
     d: u8 = 0,
     w: u8 = 0,
+    s: u8 = 0,
     data: ?u8 = null,
     dataw: ?u8 = null,
     disp_lo: ?u8 = null,
@@ -57,6 +58,7 @@ const Identifier = enum {
     rm,
     d,
     w,
+    s,
     disp_lo,
     disp_hi,
     data,
@@ -91,6 +93,8 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
         return .d;
     } else if (std.mem.startsWith(u8, key_buffer, "w")) {
         return .w;
+    } else if (std.mem.startsWith(u8, key_buffer, "s")) {
+        return .s;
     } else if (std.mem.startsWith(u8, key_buffer, "pad")) {
         return .pad;
     }
@@ -98,8 +102,8 @@ fn keyToIdentifier(key_buffer: []u8) Identifier {
     return .none;
 }
 
-fn createMapOfOpcodes() !*std.AutoArrayHashMap([2]u8, Encoding) {
-    var map = std.AutoArrayHashMap([2]u8, Encoding).init(std.heap.page_allocator);
+fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encoding) {
+    var map = std.AutoArrayHashMap([2]u8, Encoding).init(allocator);
 
     //
     // mov
@@ -121,7 +125,17 @@ fn createMapOfOpcodes() !*std.AutoArrayHashMap([2]u8, Encoding) {
     try map.put(.{ 0b1010000_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
     try map.put(.{ 0b1010001_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
 
-    return &map;
+    //
+    // add
+    //
+
+    // Reg/memory with register to either
+    try map.put(.{ 0b000000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+
+    // Immediate to register/memory
+    try map.put(.{ 0b100000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8"});
+
+    return map;
 }
 
 const MOST_SIGNIFICANT_BIT_IDX = 7;
@@ -380,6 +394,9 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 .w => {
                     decoding.w = bit_value;
                 },
+                .s => {
+                    decoding.s = bit_value;
+                },
                 .disp_lo => {
                     if (decoding.mod) |mod| {
                         if ((mod == 0b11 or mod == 0b00) and !isDirectAddress(decoding)) {
@@ -402,11 +419,12 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                     decoding.data = bit_value;
                 },
                 .dataw => {
-                    if (decoding.w == 0) {
+                    if (decoding.s == 0 and decoding.w == 1) {
+                        decoding.dataw = bit_value;
+                    } else {
                         i = 0;
                         continue;
                     }
-                    decoding.dataw = bit_value;
                 },
                 .addr_lo => {
                     decoding.addr_lo = bit_value;
@@ -436,11 +454,14 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
 }
 
 pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offset: u16) !?[]Instruction {
-    const map = try createMapOfOpcodes();
+    var map = try createMapOfOpcodes(allocator);
+    var iterator = map.iterator();
+
+    defer {
+        map.deinit();
+    }
     var instructions = ArrayList(Instruction).init(allocator);
     var current_offset = offset;
-
-    var iterator = map.iterator();
 
     while (current_offset < buffer_len) {
         while (iterator.next()) |entry| {
@@ -762,5 +783,36 @@ test "extract bits" {
         if (@rem(total_bits, 8) == 0) {
             offset += 1;
         }
+    }
+}
+
+test "decoding add reg-mem" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.add,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+    };
+
+    // add bx, [bx+si]
+    const bytes_buffer = [_]u8 { 0b00000011, 0b00011000 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.add, result.opcode);
+        try expectEqual(Register.bx, result.operand1.register);
+        try expectEqual(Register.bx, result.operand2.?.mem_calc_no_disp.mem_calc.register1);
+        try expectEqual(Register.si, result.operand2.?.mem_calc_no_disp.mem_calc.register2.?);
+    }
+}
+
+test "decode add immediate" {
+    const encoding: Encoding = .{
+        .opcode = .add,
+        .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
+    };
+
+    // add si, 2
+    const bytes_buffer = [_]u8 { 0b10000011, 0b11000110, 0b00000010 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.add, result.opcode);
+        try expectEqual(Register.si, result.operand1.register);
+        try expect(result.operand2.?.immediate.value == 2);
     }
 }

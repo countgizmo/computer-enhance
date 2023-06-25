@@ -320,3 +320,23 @@ test "print accumulator to memory" {
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
 }
+
+test "print add immediate" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.add,
+        .operand1 = .{
+            .register = Register.si,
+        },
+        .operand2 = .{
+            .immediate = .{
+                .value = 2,
+            },
+        },
+    };
+
+    const expected = "add si, 2";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}

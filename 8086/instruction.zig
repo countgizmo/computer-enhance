@@ -52,6 +52,7 @@ pub const MemCalcTable = [_]MemCalc {
 
 pub const Opcode = enum {
     mov,
+    add,
 };
 
 pub const DataSize = enum {
