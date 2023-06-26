@@ -111,7 +111,7 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
         if (explicit_type) |et| {
             defer allocator.free(et);
             switch (inst.opcode) {
-                .add, .sub => {
+                .add, .sub, .cmp => {
                     return try fmt.allocPrint(allocator, "{s} {s} {s}, {s}", .{ @tagName(inst.opcode), et, operand1, operand2 });
                 },
                 else => {

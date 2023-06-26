@@ -147,6 +147,17 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     try map.put(.{ 0b0010110_0, 0b1111111_0 }, .{ .opcode = .sub, .bits_enc = "opcode7:w1:data8:dataw8"});
 
     //
+    // cmp
+    //
+
+    // Reg/memory with register to either
+    try map.put(.{ 0b001110_00, 0b111111_00 }, .{ .opcode = .cmp, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+
+    // Immediate to accumulator
+    try map.put(.{ 0b0011110_0, 0b1111111_0 }, .{ .opcode = .cmp, .bits_enc = "opcode7:w1:data8:dataw8"});
+
+
+    //
     // Arithmetic sub-group
     //
     // Immediate to register/memory - use second byte to determine the opcode
