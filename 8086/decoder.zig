@@ -40,6 +40,7 @@ const Decoding = struct {
     disp_hi: ?u8 = null,
     addr_lo: ?u8 = null,
     addr_hi: ?u8 = null,
+    pad: ?u8 = null,
 };
 
 fn isNumber(ch: u8) bool {
@@ -132,11 +133,26 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     // Reg/memory with register to either
     try map.put(.{ 0b000000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
 
-    // Immediate to register/memory
-    try map.put(.{ 0b100000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8"});
-
     // Immediate to accumulator
     try map.put(.{ 0b0000010_0, 0b1111111_0 }, .{ .opcode = .add, .bits_enc = "opcode7:w1:data8:dataw8"});
+
+    //
+    // sub
+    //
+
+    // Reg/memory with register to either
+    try map.put(.{ 0b001010_00, 0b111111_00 }, .{ .opcode = .sub, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+
+    // Immediate to accumulator
+    try map.put(.{ 0b0010110_0, 0b1111111_0 }, .{ .opcode = .sub, .bits_enc = "opcode7:w1:data8:dataw8"});
+
+    //
+    // Arithmetic sub-group
+    //
+    // Immediate to register/memory - use second byte to determine the opcode
+    try map.put(.{ 0b100000_00, 0b111111_00 }, .{ .opcode = .arithmetic, .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8"});
+
+
 
     return map;
 }
@@ -349,6 +365,27 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.
     };
 }
 
+fn getOpCode(encoding: Encoding, decoding: Decoding) Opcode {
+    if (encoding.opcode == .arithmetic and decoding.pad != null) {
+        switch (decoding.pad.?) {
+            0 => {
+                return .add;
+            },
+            0b101 => {
+                return .sub;
+            },
+            0b111 => {
+                return .cmp;
+            },
+            else => {
+                return encoding.opcode;
+            }
+        }
+    }
+
+    return encoding.opcode;
+}
+
 fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?instruction.Instruction {
     var current_offset = offset;
     var key: [8]u8 = undefined;
@@ -435,6 +472,9 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 .addr_hi => {
                     decoding.addr_hi = bit_value;
                 },
+                .pad => {
+                    decoding.pad = bit_value;
+                },
                 else => {},
             }
 
@@ -449,7 +489,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
     }
 
     return .{
-        .opcode = encoding.opcode,
+        .opcode = getOpCode(encoding, decoding),
         .operand1 = try decodeOperand(decoding, OperandPosition.destination),
         .operand2 = try decodeOperand(decoding, OperandPosition.source),
         .size = current_offset - offset,
@@ -815,6 +855,21 @@ test "decode add immediate" {
     const bytes_buffer = [_]u8 { 0b10000011, 0b11000110, 0b00000010 };
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expectEqual(Opcode.add, result.opcode);
+        try expectEqual(Register.si, result.operand1.register);
+        try expect(result.operand2.?.immediate.value == 2);
+    }
+}
+
+test "decode sub immediate" {
+    const encoding: Encoding = .{
+        .opcode = .arithmetic,
+        .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
+    };
+
+    // add si, 2
+    const bytes_buffer = [_]u8 { 0b10000011, 0b11101110, 0b00000010 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.sub, result.opcode);
         try expectEqual(Register.si, result.operand1.register);
         try expect(result.operand2.?.immediate.value == 2);
     }
