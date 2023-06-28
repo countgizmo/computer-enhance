@@ -41,6 +41,7 @@ const Decoding = struct {
     addr_lo: ?u8 = null,
     addr_hi: ?u8 = null,
     pad: ?u8 = null,
+    ip_inc: ?i8 = null,
 };
 
 fn isNumber(ch: u8) bool {
@@ -67,11 +68,14 @@ const Identifier = enum {
     pad,
     addr_lo,
     addr_hi,
+    ip_inc,
 };
 
 fn keyToIdentifier(key_buffer: []u8) Identifier {
     if (std.mem.startsWith(u8, key_buffer, "opcode")) {
         return .opcode;
+    } else if (std.mem.startsWith(u8, key_buffer, "ip-inc")) {
+        return .ip_inc;
     } else if (std.mem.startsWith(u8, key_buffer, "addr-lo")) {
         return .addr_lo;
     } else if (std.mem.startsWith(u8, key_buffer, "addr-hi")) {
@@ -163,6 +167,11 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     // Immediate to register/memory - use second byte to determine the opcode
     try map.put(.{ 0b100000_00, 0b111111_00 }, .{ .opcode = .arithmetic, .bits_enc = "opcode6:s1:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8"});
 
+
+    //
+    // Jumps
+    //
+    try map.put(.{ 0b01110100, 0b11111111 }, .{ .opcode = .je, .bits_enc = "opcode8:ip-inc8" });
 
 
     return map;
@@ -320,11 +329,22 @@ fn getDirectAddress(decoding: Decoding) !instruction.Operand {
     return DecoderError.AddressNotFound;
 }
 
-fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !instruction.Operand {
+fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
     if (op_position == .source and decoding.data != null) {
         return try getDataOperand(decoding);
     }
 
+    if (op_position == .destination and decoding.ip_inc != null) {
+        return .{
+            .signed_inc_to_inst = decoding.ip_inc.?,
+        };
+    }
+
+    // Jumps have only one operand
+    // Note(evgheni): maybe there's a better way to code this.
+    if (op_position == .source and decoding.ip_inc != null) {
+        return null;
+    }
 
     if (decoding.addr_lo != null) {
         if ((decoding.d == 0 and op_position == .destination) or
@@ -486,6 +506,9 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                 .pad => {
                     decoding.pad = bit_value;
                 },
+                .ip_inc => {
+                    decoding.ip_inc = @bitCast(i8, bit_value);
+                },
                 else => {},
             }
 
@@ -499,9 +522,17 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
         }
     }
 
+    var operand1: instruction.Operand = undefined;
+
+    if (decodeOperand(decoding, OperandPosition.destination)) |op1| {
+        operand1 = op1.?;
+    } else |err| {
+        return err;
+    }
+    
     return .{
         .opcode = getOpCode(encoding, decoding),
-        .operand1 = try decodeOperand(decoding, OperandPosition.destination),
+        .operand1 = operand1,
         .operand2 = try decodeOperand(decoding, OperandPosition.source),
         .size = current_offset - offset,
     };
@@ -883,5 +914,21 @@ test "decode sub immediate" {
         try expectEqual(Opcode.sub, result.opcode);
         try expectEqual(Register.si, result.operand1.register);
         try expect(result.operand2.?.immediate.value == 2);
+    }
+}
+
+test "decode jump" {
+    const encoding: Encoding = .{
+        .opcode = .je,
+        .bits_enc = "opcode8:ip-inc8",
+    };
+
+    // test_label0:
+    // jz test_label0
+
+    const bytes_buffer = [_]u8 {0b01110100, 0b11111110};
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.je, result.opcode);
+        try expect(result.operand1.signed_inc_to_inst == -2);
     }
 }

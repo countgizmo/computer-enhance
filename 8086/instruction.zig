@@ -56,6 +56,7 @@ pub const Opcode = enum {
     sub,
     cmp,
     arithmetic,
+    je,
 };
 
 pub const DataSize = enum {
@@ -74,6 +75,7 @@ pub const Operand = union(enum) {
     mem_calc_no_disp: MemCalcNoDisp,
     mem_calc_with_disp: MemCalc,
     direct_address: u16,
+    signed_inc_to_inst: i8,
 };
 
 pub const Instruction = struct {

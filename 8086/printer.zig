@@ -91,7 +91,12 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
                 "[{s}]", .{@tagName(val.register1)});
         },
         .direct_address => |val| {
-            return fmt.allocPrint( allocator, "[{d}]", .{val});
+            return fmt.allocPrint(allocator, "[{d}]", .{val});
+        },
+        .signed_inc_to_inst => |val| {
+            const sign: u8 = if (val >= 0) '+' else '-';
+            const display_value = if (val >= 0) val else val * -1;
+            return fmt.allocPrint(allocator, "{c}{d}", .{sign, display_value});
         }
     };
 
@@ -122,7 +127,14 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
 
         return try fmt.allocPrint(allocator, "{s} {s}, {s}", .{ @tagName(inst.opcode), operand1, operand2 });
     } else {
-        return try fmt.allocPrint(allocator, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
+        switch (inst.opcode) {
+            .je => {
+                return try fmt.allocPrint(allocator, "{s} $+2{s}", .{@tagName(inst.opcode), operand1});
+            },
+            else => {
+                return try fmt.allocPrint(allocator, "{s} {s}", .{ @tagName(inst.opcode), operand1 });
+            }
+        }
     }
 
     return &.{};
@@ -389,6 +401,22 @@ test "print add explicit type" {
     };
 
     const expected = "add word [bp + si + 1000], 29";
+    const actual = try bufPrintInstruction(allocator, inst);
+    defer allocator.free(actual);
+    try std.testing.expectEqualSlices(u8, expected, actual);
+}
+
+test "print jump" {
+    var allocator = std.testing.allocator;
+    const inst: Instruction = .{
+        .opcode = Opcode.je,
+        .operand1 = .{
+            .signed_inc_to_inst = -2
+        },
+    };
+
+    // Using $+2 for NASM: $+2 followed by the actuall offset.
+    const expected = "je $+2-2";
     const actual = try bufPrintInstruction(allocator, inst);
     defer allocator.free(actual);
     try std.testing.expectEqualSlices(u8, expected, actual);
