@@ -172,6 +172,25 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     // Jumps
     //
     try map.put(.{ 0b01110100, 0b11111111 }, .{ .opcode = .je, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111100, 0b11111111 }, .{ .opcode = .jl, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111110, 0b11111111 }, .{ .opcode = .jle, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110010, 0b11111111 }, .{ .opcode = .jb, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110110, 0b11111111 }, .{ .opcode = .jbe, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111010, 0b11111111 }, .{ .opcode = .jp, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110000, 0b11111111 }, .{ .opcode = .jo, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111000, 0b11111111 }, .{ .opcode = .js, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111101, 0b11111111 }, .{ .opcode = .jnl, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111111, 0b11111111 }, .{ .opcode = .jnle, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110011, 0b11111111 }, .{ .opcode = .jnb, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110111, 0b11111111 }, .{ .opcode = .jnbe, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111011, 0b11111111 }, .{ .opcode = .jnp, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110001, 0b11111111 }, .{ .opcode = .jno, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01111001, 0b11111111 }, .{ .opcode = .jns, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b11100010, 0b11111111 }, .{ .opcode = .loop, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b11100001, 0b11111111 }, .{ .opcode = .loopz, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b11100000, 0b11111111 }, .{ .opcode = .loopnz, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b11100011, 0b11111111 }, .{ .opcode = .jcxz, .bits_enc = "opcode8:ip-inc8" });
 
 
     return map;
