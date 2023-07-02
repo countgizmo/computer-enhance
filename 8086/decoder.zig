@@ -4,10 +4,10 @@ const Allocator = std.mem.Allocator;
 const log = std.log;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+const Register = @import("register_store.zig").Register;
 const instruction = @import("instruction.zig");
 const Instruction = instruction.Instruction;
 const Opcode = instruction.Opcode;
-const Register = instruction.Register;
 const MemoryCalculationNoDisp = instruction.MemoryCalculationNoDisp;
 
 const DecoderError = error {
@@ -246,7 +246,7 @@ fn getRegister(decoding: Decoding, op_position: OperandPosition) Register {
         },
     }
 
-    return @intToEnum(instruction.Register, register_idx);
+    return @intToEnum(Register, register_idx);
 }
 
 fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Operand {
@@ -411,7 +411,7 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction
     // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
     const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     return .{
-        .register = @intToEnum(instruction.Register, register_idx),
+        .register = @intToEnum(Register, register_idx),
     };
 }
 
@@ -601,8 +601,8 @@ test "decoding instruction" {
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     try expect(result.?.opcode == Opcode.mov);
-    try expectEqual(instruction.Register.cx, result.?.operand1.register);
-    try expectEqual(instruction.Register.bx, result.?.operand2.?.register);
+    try expectEqual(Register.cx, result.?.operand1.register);
+    try expectEqual(Register.bx, result.?.operand2.?.register);
 }
 
 test "decoding instruction - 8-bit immediate" {
@@ -614,7 +614,7 @@ test "decoding instruction - 8-bit immediate" {
 
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
-    try expectEqual(instruction.Register.cl, result.?.operand1.register);
+    try expectEqual(Register.cl, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate.value == 12);
 }
 
@@ -627,7 +627,7 @@ test "decoding instruction - 16-bit immediate" {
 
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
     try expect(result.?.opcode == Opcode.mov);
-    try expectEqual(instruction.Register.dx, result.?.operand1.register);
+    try expectEqual(Register.dx, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate.value == 3948);
 }
 
@@ -641,7 +641,7 @@ test "decoding effective memory address calculation to register" {
 
     try expect(result.?.opcode == Opcode.mov);
     try expect(result.?.size == 2);
-    try expectEqual(instruction.Register.al, result.?.operand1.register);
+    try expectEqual(Register.al, result.?.operand1.register);
     try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register1 == Register.bx);
     try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register2 == Register.si);
 }

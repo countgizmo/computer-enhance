@@ -1,22 +1,4 @@
-pub const Register = enum {
-    al,
-    cl,
-    dl,
-    bl,
-    ah,
-    ch,
-    dh,
-    bh,
-    ax,
-    cx,
-    dx,
-    bx,
-    sp,
-    bp,
-    si,
-    di,
-};
-
+const Register = @import("register_store.zig").Register;
 
 const Displacement = union(enum) {
     byte: i8,

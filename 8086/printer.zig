@@ -4,10 +4,10 @@ const Allocator = std.mem.Allocator;
 const log = std.log;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+const Register = @import("register_store.zig").Register;
 const instruction = @import("instruction.zig");
 const Instruction = instruction.Instruction;
 const Opcode = instruction.Opcode;
-const Register = instruction.Register;
 const Operand = instruction.Operand;
 const MemoryCalculation = instruction.MemoryCalculation;
 
@@ -153,6 +153,13 @@ pub fn printHeader(file_name: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("; FILE: {s}\n", .{file_name});
     try stdout.print("bits 16\n\n", .{});
+}
+
+pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction) !void {
+    try printHeader(file_name);
+    for (insts) |inst| {
+        try printInstruction(allocator, inst);
+    }
 }
 
 test "print mov" {
