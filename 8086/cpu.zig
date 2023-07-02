@@ -16,6 +16,9 @@ fn movToRegister(destination: Register, source: Operand) void {
         .immediate => |immediate| {
             register_store.write(destination, immediate.value);
         },
+        .register => |reg| {
+            register_store.writeFromRegister(destination, reg);
+        },
         else => {
             return;
         }

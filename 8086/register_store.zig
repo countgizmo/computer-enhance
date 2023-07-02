@@ -33,6 +33,11 @@ pub fn write(register: Register, value: i16) void {
     }
 }
 
+pub fn writeFromRegister(destination: Register, source: Register) void {
+    const value = read(source);
+    return write(destination, value);
+}
+
 pub fn read(register: Register) i16 {
     switch (register) {
         .ax, .bx, .cx, .dx, .sp, .bp, .si, .di => |mem_reg| {
