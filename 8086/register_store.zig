@@ -1,5 +1,6 @@
 const std = @import("std");
 const fm = std.fmt;
+const log = std.log;
 
 pub const Register = enum {
     al,
@@ -20,15 +21,28 @@ pub const Register = enum {
     di,
 };
 
-var mem_registers = [8]i16{0, 0, 0, 0, 0, 0, 0, 0};
+var mem_registers = [8]u16{0, 0, 0, 0, 0, 0, 0, 0};
 
-pub fn write(register: Register, value: i16) void {
+fn writeLow(register: Register, low_byte: u8) void {
+    const value = @as(i16, low_byte << 8);
+    write(register, value);
+}
+
+pub fn write(register: Register, value: u16) void {
     switch (register) {
         .ax, .bx, .cx, .dx, .sp, .bp, .si, .di => |mem_reg| {
             const idx = @enumToInt(mem_reg) - 8;
             mem_registers[idx] = value;
         },
-        else => {
+        .al, .bl, .cl, .dl => |low_reg| {
+            const idx = @enumToInt(low_reg);
+            const combined_val = mem_registers[idx] ^ ((mem_registers[idx] ^ value) & 0b11111111);
+            mem_registers[idx] = combined_val;
+        },
+        .ah, .bh, .ch, .dh => |high_reg| {
+            const idx = @enumToInt(high_reg) - 4;
+            const combined_val = mem_registers[idx] ^ ((mem_registers[idx] ^ (value << 8)) & 0b1111111100000000);
+            mem_registers[idx] = combined_val;
         }
     }
 }
@@ -38,13 +52,21 @@ pub fn writeFromRegister(destination: Register, source: Register) void {
     return write(destination, value);
 }
 
-pub fn read(register: Register) i16 {
+pub fn read(register: Register) u16 {
     switch (register) {
         .ax, .bx, .cx, .dx, .sp, .bp, .si, .di => |mem_reg| {
             const idx = @enumToInt(mem_reg) - 8;
             return mem_registers[idx];
         },
-        else => {
+        .al, .bl, .cl, .dl => |low_reg| {
+            const idx = @enumToInt(low_reg);
+            const val = mem_registers[idx] & 0b11111111;
+            return val;
+        },
+        .ah, .bh, .ch, .dh => |high_reg| {
+            const idx = @enumToInt(high_reg) - 4;
+            const val = mem_registers[idx] >> 8;
+            return val;
         }
     }
 

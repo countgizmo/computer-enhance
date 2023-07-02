@@ -71,3 +71,57 @@ test "moving mmediate to memory" {
     try execInstruction(inst);
     try expect(register_store.read(.ax) == 1);
 }
+
+test "moving to low register" {
+    const inst1: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .bx,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 0x4444},
+        },
+    };
+
+    const inst2: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .bl,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 0x33},
+        },
+    };
+
+    try execInstruction(inst1);
+    try execInstruction(inst2);
+    try expect(register_store.read(.bl) == 0x33);
+    try register_store.printStatus();
+}
+
+test "moving to high register" {
+    const inst1: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .dx,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 0x8888},
+        },
+    };
+
+    const inst2: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .dh,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 0x77},
+        },
+    };
+
+    try execInstruction(inst1);
+    try execInstruction(inst2);
+    try expect(register_store.read(.dh) == 0x77);
+    try expect(register_store.read(.dl) == 0x88);
+}

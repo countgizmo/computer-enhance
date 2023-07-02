@@ -289,11 +289,11 @@ fn getDataOperand(decoding: Decoding) !instruction.Operand {
 
         if (decoding.dataw) |data_hi| {
             operand = .{
-                .immediate = .{ .value = @as(i16, data_hi) << 8 | data_lo },
+                .immediate = .{ .value = @as(u16, data_hi) << 8 | data_lo },
             };
         } else {
             operand = .{
-                .immediate = .{ .value = @bitCast(i8, data_lo) },
+                .immediate = .{ .value = @bitCast(u8, data_lo) },
             };
         }
 

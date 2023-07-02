@@ -61,7 +61,7 @@ pub const DataSize = enum {
 };
 
 const Immediate = struct {
-    value: i16,
+    value: u16,
     size: ?DataSize = null,
 };
 
