@@ -1,12 +1,40 @@
 ## Compute Enhance (The Homework)
 
-I'm bad at doing homework. Always was, always will be.
-But this time the homework is interesting. So I am stuck at the first
-part for waaay too long just cause I want to try different approach, make sure
-I get it, etc.
+### 8086 Simulator
 
-Anyway, I don't know why this is a public repository, but it is even though there's nothing here
-for the public.
+My silly simulator can:
+- disassemble a subset of 8086 instructions from binary;
+- simulate storing to and reading from (simulated) registers;
+- run arithmetic operations (add, sub, cmp).
 
-P.S. I don't know Zig, so DO NOT use this code as educational or inspirational material. If you clone it
-and try to compile it it just might make your computer explode. You have been warned.
+```
+❯ zig run simulator.zig -- asm/listing_46
+; FILE: asm/listing_46
+bits 16
+
+mov bx, 61443
+mov cx, 3841
+sub bx, cx
+mov sp, 998
+mov bp, 999
+cmp bp, sp
+add bp, 1027
+sub bp, 2026
+
+=== REGISTERS ===
+ax: 0 (0x0)
+bx: -7934 (0x-1EFE)
+cx: 3841 (0xF01)
+dx: 0 (0x0)
+sp: 998 (0x3E6)
+bp: 0 (0x0)
+si: 0 (0x0)
+di: 0 (0x0)
+=================
+
+=== FLAGS ===
+zf: 1
+sf: 0
+=================
+
+```
