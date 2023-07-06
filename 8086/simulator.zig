@@ -4,6 +4,7 @@ const printer = @import("printer.zig");
 const decoder = @import("decoder.zig");
 const cpu = @import("cpu.zig");
 const register_store = @import("register_store.zig");
+const flags = @import("flags.zig");
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -25,5 +26,6 @@ pub fn main() !void {
         try printer.printListing(arena.allocator(), file_name, insts);
         try cpu.execInstrucitons(insts);
         try register_store.printStatus();
+        try flags.printStatus();
     }
 }

@@ -21,11 +21,15 @@ pub const Register = enum {
     di,
 };
 
-var mem_registers = [8]u16{0, 0, 0, 0, 0, 0, 0, 0};
+var mem_registers = [_]u16{0, 0, 0, 0, 0, 0, 0, 0};
 
 fn writeLow(register: Register, low_byte: u8) void {
     const value = @as(i16, low_byte << 8);
     write(register, value);
+}
+
+pub fn resetRegisters() void {
+    mem_registers = [_]u16{0} ** mem_registers.len;
 }
 
 pub fn write(register: Register, value: u16) void {
@@ -81,9 +85,11 @@ pub fn printStatus() !void {
 
     for (registers) |reg| {
         const idx = @enumToInt(reg) - 8;
+        const value = @bitCast(i16, mem_registers[idx]);
         try stdout.print("{s}: {d} (0x{X})\n", 
-            .{@tagName(reg), mem_registers[idx], mem_registers[idx]});
+            .{@tagName(reg), value, value});
     }
+
 
     try stdout.print("=================\n", .{});
 }
