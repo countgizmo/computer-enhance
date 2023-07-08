@@ -93,7 +93,7 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
         .direct_address => |val| {
             return fmt.allocPrint(allocator, "[{d}]", .{val});
         },
-        .signed_inc_to_inst => |val| {
+        .signed_inc_to_ip => |val| {
             const sign: u8 = if (val >= 0) '+' else '-';
             const display_value = if (val >= 0) val else val * -1;
             return fmt.allocPrint(allocator, "{c}{d}", .{sign, display_value});
@@ -129,7 +129,7 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     } else {
         switch (inst.opcode) {
             .je, .jl, .jle, .jb, .jbe, .jp,
-            .jo, .js, .jne, .jnl, .jnle, .jnb,
+            .jo, .js, .jne_jnz, .jnl, .jnle, .jnb,
             .jnbe, .jnp, .jno, .jns, .loop,
             .loopz, .loopnz, .jcxz => {
                 return try fmt.allocPrint(allocator, "{s} $+2{s}", .{@tagName(inst.opcode), operand1});
@@ -423,7 +423,7 @@ test "print jump" {
     const inst: Instruction = .{
         .opcode = Opcode.je,
         .operand1 = .{
-            .signed_inc_to_inst = -2
+            .signed_inc_to_ip = -2
         },
     };
 

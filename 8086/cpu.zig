@@ -1,5 +1,6 @@
 const std = @import("std");
 const log = std.log;
+const ArrayList = std.ArrayList;
 const expect = std.testing.expect;
 const register_store = @import("register_store.zig");
 const printer = @import("printer.zig");
@@ -165,6 +166,15 @@ fn execAdd(inst: Instruction) !void {
     }
 }
 
+pub fn execJneJnz(inst: Instruction) !void {
+    const zf = flags.getFlag(.zf);
+    const ip = register_store.readIP();
+    if (zf != 1) {
+        const new_ip = @bitCast(i16, ip) + @intCast(i16, inst.operand1.signed_inc_to_ip);
+        register_store.writeIP(@bitCast(u16, new_ip));
+    }
+}
+
 pub fn execInstruction(inst: Instruction) !void {
     switch (inst.opcode) {
         .mov => {
@@ -179,17 +189,35 @@ pub fn execInstruction(inst: Instruction) !void {
         .add => {
             try execAdd(inst);
         },
+        .jne_jnz => {
+            try execJneJnz(inst);
+        },
         else => {
             return;
         }
     }
 }
 
+fn getInstruction(insts: []Instruction, ip: u16) ?Instruction {
+    var offset: usize = 0;
+    var idx: usize = 0;
+    while (idx < insts.len) : (idx += 1) {
+        if (offset == ip) {
+            return insts[idx];
+        }
+        offset += insts[idx].size;
+    }
+
+    return null;
+}
+
 pub fn execInstrucitons(insts: []Instruction) !void {
-    for (insts) |inst| {
-        const new_ip = register_store.readIP() + inst.size;
+    var current_ip = register_store.readIP();
+    while (getInstruction(insts, current_ip)) |inst| {
+        const new_ip = current_ip + inst.size;
         register_store.writeIP(new_ip);
         try execInstruction(inst);
+        current_ip = register_store.readIP();
     }
 }
 
@@ -367,6 +395,7 @@ test "comparing flow" {
         .operand2 = .{
             .immediate = .{ .value = @bitCast(u16, immediate1) },
         },
+        .size = 2,
     };
 
     const inst2: Instruction = .{
@@ -377,6 +406,7 @@ test "comparing flow" {
         .operand2 = .{
             .immediate = .{ .value = 3841 },
         },
+        .size = 2,
     };
 
     const inst3: Instruction = .{
@@ -387,6 +417,7 @@ test "comparing flow" {
         .operand2 = .{
             .register = .cx,
         },
+        .size = 3,
     };
 
     const inst4: Instruction = .{
@@ -397,6 +428,7 @@ test "comparing flow" {
         .operand2 = .{
             .immediate = .{ .value = 998 },
         },
+        .size = 2,
     };
 
     const inst5: Instruction = .{
@@ -407,6 +439,7 @@ test "comparing flow" {
         .operand2 = .{
             .immediate = .{ .value = 999 },
         },
+        .size = 2,
     };
 
     const inst6: Instruction = .{
@@ -417,6 +450,7 @@ test "comparing flow" {
         .operand2 = .{
             .register = .sp,
         },
+        .size = 3,
     };
 
 
@@ -441,4 +475,63 @@ test "comparing flow" {
     try expect(@bitCast(i16, result) == 999);
     try expect(flags.getFlag(.sf) == 0);
     try expect(flags.getFlag(.zf) == 0);
+}
+
+test "get instruction by IP" {
+    const immediate1: i16 = -4093;
+    const inst1: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .bx,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = @bitCast(u16, immediate1) },
+        },
+        .size = 2,
+    };
+
+    const inst2: Instruction = .{
+        .opcode = Opcode.mov,
+        .operand1 = .{
+            .register = .cx,
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 3841 },
+        },
+        .size = 2,
+    };
+
+    const inst3: Instruction = .{
+        .opcode = Opcode.sub,
+        .operand1 = .{
+            .register = .bx,
+        },
+        .operand2 = .{
+            .register = .cx,
+        },
+        .size = 3,
+    };
+
+    
+    var allocator = std.testing.allocator;
+    var instructions = ArrayList(Instruction).init(allocator);
+    defer instructions.deinit();
+    try instructions.append(inst1);
+    try instructions.append(inst2);
+    try instructions.append(inst3);
+
+    if (getInstruction(instructions.items, 2)) |target_inst| {
+        try expect(target_inst.opcode == inst2.opcode);
+        try expect(target_inst.operand1.register == inst2.operand1.register);
+        try expect(target_inst.operand2.?.immediate.value == inst2.operand2.?.immediate.value);
+    }
+
+    if (getInstruction(instructions.items, 4)) |target_inst| {
+        try expect(target_inst.opcode == inst3.opcode);
+        try expect(target_inst.operand1.register == inst3.operand1.register);
+        try expect(target_inst.operand2.?.register == inst3.operand2.?.register);
+    }
+
+    const no_inst = getInstruction(instructions.items, 5);
+    try expect(no_inst == null);
 }

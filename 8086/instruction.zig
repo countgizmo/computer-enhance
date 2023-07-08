@@ -41,7 +41,7 @@ pub const Opcode = enum {
     jp,
     jo,
     js,
-    jne,
+    jne_jnz,
     jnl,
     jnle,
     jnb,
@@ -71,7 +71,7 @@ pub const Operand = union(enum) {
     mem_calc_no_disp: MemCalcNoDisp,
     mem_calc_with_disp: MemCalc,
     direct_address: u16,
-    signed_inc_to_inst: i8,
+    signed_inc_to_ip: i8,
 };
 
 pub const Instruction = struct {

@@ -179,7 +179,7 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     try map.put(.{ 0b01111010, 0b11111111 }, .{ .opcode = .jp, .bits_enc = "opcode8:ip-inc8" });
     try map.put(.{ 0b01110000, 0b11111111 }, .{ .opcode = .jo, .bits_enc = "opcode8:ip-inc8" });
     try map.put(.{ 0b01111000, 0b11111111 }, .{ .opcode = .js, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne_jnz, .bits_enc = "opcode8:ip-inc8" });
     try map.put(.{ 0b01111101, 0b11111111 }, .{ .opcode = .jnl, .bits_enc = "opcode8:ip-inc8" });
     try map.put(.{ 0b01111111, 0b11111111 }, .{ .opcode = .jnle, .bits_enc = "opcode8:ip-inc8" });
     try map.put(.{ 0b01110011, 0b11111111 }, .{ .opcode = .jnb, .bits_enc = "opcode8:ip-inc8" });
@@ -355,7 +355,7 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction
 
     if (op_position == .destination and decoding.ip_inc != null) {
         return .{
-            .signed_inc_to_inst = decoding.ip_inc.?,
+            .signed_inc_to_ip = decoding.ip_inc.?,
         };
     }
 
@@ -603,6 +603,7 @@ test "decoding instruction" {
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(Register.cx, result.?.operand1.register);
     try expectEqual(Register.bx, result.?.operand2.?.register);
+    try expect(result.?.size == 2);
 }
 
 test "decoding instruction - 8-bit immediate" {
@@ -616,6 +617,7 @@ test "decoding instruction - 8-bit immediate" {
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(Register.cl, result.?.operand1.register);
     try expect(result.?.operand2.?.immediate.value == 12);
+    try expect(result.?.size == 2);
 }
 
 test "decoding instruction - 16-bit immediate" {
@@ -933,6 +935,7 @@ test "decode sub immediate" {
         try expectEqual(Opcode.sub, result.opcode);
         try expectEqual(Register.si, result.operand1.register);
         try expect(result.operand2.?.immediate.value == 2);
+        try expect(result.size == 3);
     }
 }
 
@@ -948,6 +951,6 @@ test "decode jump" {
     const bytes_buffer = [_]u8 {0b01110100, 0b11111110};
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expectEqual(Opcode.je, result.opcode);
-        try expect(result.operand1.signed_inc_to_inst == -2);
+        try expect(result.operand1.signed_inc_to_ip == -2);
     }
 }
