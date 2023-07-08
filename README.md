@@ -5,7 +5,8 @@
 My silly simulator can:
 - disassemble a subset of 8086 instructions from binary;
 - simulate storing to and reading from (simulated) registers;
-- run arithmetic operations (add, sub, cmp).
+- run arithmetic operations (add, sub, cmp);
+- IP register and conditional jumps.
 
 ```
 ❯ zig run simulator.zig -- asm/listing_46
