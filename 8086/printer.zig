@@ -146,7 +146,7 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
 pub fn printInstruction(allocator: Allocator, inst: Instruction) !void {
     const stdout = std.io.getStdOut().writer();
     const inst_str = try bufPrintInstruction(allocator, inst);
-    try stdout.print("{s}\n", .{inst_str});
+    try stdout.print("{s}", .{inst_str});
 }
 
 pub fn printHeader(file_name: []const u8) !void {
@@ -156,9 +156,11 @@ pub fn printHeader(file_name: []const u8) !void {
 }
 
 pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction) !void {
+    const stdout = std.io.getStdOut().writer();
     try printHeader(file_name);
     for (insts) |inst| {
         try printInstruction(allocator, inst);
+        try stdout.print("\n", .{});
     }
 }
 

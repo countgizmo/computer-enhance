@@ -2,6 +2,7 @@ const std = @import("std");
 const log = std.log;
 const expect = std.testing.expect;
 const register_store = @import("register_store.zig");
+const printer = @import("printer.zig");
 const Register = register_store.Register;
 const instruction = @import("instruction.zig");
 const Instruction = instruction.Instruction;
@@ -186,11 +187,13 @@ pub fn execInstruction(inst: Instruction) !void {
 
 pub fn execInstrucitons(insts: []Instruction) !void {
     for (insts) |inst| {
+        const new_ip = register_store.readIP() + inst.size;
+        register_store.writeIP(new_ip);
         try execInstruction(inst);
     }
 }
 
-test "moving mmediate to memory" {
+test "moving immediate to memory" {
     const inst: Instruction = .{
         .opcode = Opcode.mov,
         .operand1 = .{

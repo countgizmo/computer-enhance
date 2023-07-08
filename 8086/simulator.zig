@@ -26,6 +26,7 @@ pub fn main() !void {
         try printer.printListing(arena.allocator(), file_name, insts);
         try cpu.execInstrucitons(insts);
         try register_store.printStatus();
+        try register_store.printIP();
         try flags.printStatus();
     }
 }

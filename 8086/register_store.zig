@@ -23,6 +23,7 @@ pub const Register = enum {
 
 var mem_registers = [_]u16{0, 0, 0, 0, 0, 0, 0, 0};
 
+
 fn writeLow(register: Register, low_byte: u8) void {
     const value = @as(i16, low_byte << 8);
     write(register, value);
@@ -91,5 +92,23 @@ pub fn printStatus() !void {
     }
 
 
+    try stdout.print("=================\n", .{});
+}
+
+
+var ip: u16 = 0;
+
+pub fn readIP() u16 {
+    return ip;
+}
+
+pub fn writeIP(value: u16) void {
+    ip = value;
+}
+
+pub fn printIP() !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("\n====== IP ======= \n", .{});
+    try stdout.print("{d}\n", .{ip});
     try stdout.print("=================\n", .{});
 }
