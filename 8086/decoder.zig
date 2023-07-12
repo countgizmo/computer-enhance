@@ -21,9 +21,12 @@ const OperandPosition = enum {
     destination,
 };
 
+const decoderFunc = fn(decoding: Decoding, op_position: OperandPosition) DecoderError!?instruction.Operand;
+
 const Encoding = struct {
     opcode: Opcode,
     bits_enc: []const u8,
+    decoder_fn: ?*const decoderFunc = null,
 };
 
 const Decoding = struct {
@@ -118,7 +121,7 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     try map.put(.{ 0b100010_00, 0b11111_000 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
 
     // Immediate to register
-    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = .mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8" });
+    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = .mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8", .decoder_fn = &decodeMovImmediateToRegister });
 
     // Immediate to register/memory
     try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8" });
@@ -226,27 +229,33 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u8
     return shifted_num & mask;
 }
 
-fn getRegister(decoding: Decoding, op_position: OperandPosition) Register {
+fn getRegisterOperand(decoding: Decoding, op_position: OperandPosition) instruction.Operand {
     var register_idx: u8 = undefined;
 
-    switch (op_position) {
-        .source => {
-            if (decoding.d == 0) {
-                register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-            } else {
-                register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
-            }
-        },
-        .destination=> {
-            if (decoding.d == 1) {
-                register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-            } else {
-                register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
-            }
-        },
+    if (decoding.mod != null) {
+        switch (op_position) {
+            .source => {
+                if (decoding.d == 0) {
+                    register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+                } else {
+                    register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+                }
+            },
+            .destination=> {
+                if (decoding.d == 1) {
+                    register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+                } else {
+                    register_idx = if (decoding.w == 1) decoding.rm + 8 else decoding.rm;
+                }
+            },
+        }
+    } else {
+        register_idx = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     }
 
-    return @intToEnum(Register, register_idx);
+    return .{
+        .register = @intToEnum(Register, register_idx),
+    };
 }
 
 fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Operand {
@@ -348,11 +357,19 @@ fn getDirectAddress(decoding: Decoding) !instruction.Operand {
     return DecoderError.AddressNotFound;
 }
 
-fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
-    if (op_position == .source and decoding.data != null) {
+fn decodeMovImmediateToRegister(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (decoding.data == null) {
+        return error.DataNotFound;
+    }
+
+    if (op_position == .source) {
         return try getDataOperand(decoding);
     }
 
+    return getRegisterOperand(decoding, op_position);
+}
+
+fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
     if (op_position == .destination and decoding.ip_inc != null) {
         return .{
             .signed_inc_to_ip = decoding.ip_inc.?,
@@ -378,17 +395,13 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction
 
     if (decoding.mod) |mod| {
         if (mod == 0b11) {
-            return .{
-                .register = getRegister(decoding, op_position),
-            };
+            return getRegisterOperand(decoding, op_position);
         } else if (isDirectAddress(decoding) and op_position == .source) {
             return getDirectAddressDispOperand(decoding);
         } else {
             if (op_position == .source) {
                 if (decoding.d == 0) {
-                    return .{
-                        .register = getRegister(decoding, op_position),
-                    };
+                    return getRegisterOperand(decoding, op_position);
                 } else {
                     return try getAddressCalculationOperand(decoding);
                 }
@@ -396,9 +409,7 @@ fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction
 
             if (op_position == .destination) {
                 if (decoding.d == 1) {
-                    return .{
-                        .register = getRegister(decoding, op_position),
-                    };
+                    return getRegisterOperand(decoding, op_position);
                 } else {
                     return try getAddressCalculationOperand(decoding);
                 }
@@ -542,8 +553,15 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
     }
 
     var operand1: instruction.Operand = undefined;
+    var decoder: *const decoderFunc = undefined;
 
-    if (decodeOperand(decoding, OperandPosition.destination)) |op1| {
+    if (encoding.decoder_fn) |decoder_fn| {
+        decoder = decoder_fn;
+    } else {
+        decoder = decodeOperand;
+    }
+
+    if (decoder(decoding, OperandPosition.destination)) |op1| {
         operand1 = op1.?;
     } else |err| {
         return err;
@@ -552,7 +570,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
     return .{
         .opcode = getOpCode(encoding, decoding),
         .operand1 = operand1,
-        .operand2 = try decodeOperand(decoding, OperandPosition.source),
+        .operand2 = try decoder(decoding, OperandPosition.source),
         .size = current_offset - offset,
     };
 }
@@ -610,6 +628,7 @@ test "decoding instruction - 8-bit immediate" {
     const encoding: Encoding = .{
         .opcode = Opcode.mov,
         .bits_enc = "opcode4:w1:reg3:data8:dataw8",
+        .decoder_fn = &decodeMovImmediateToRegister,
     };
     const bytes_buffer = [2]u8{ 0b10110001, 0b00001100 };
 
@@ -952,5 +971,21 @@ test "decode jump" {
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expectEqual(Opcode.je, result.opcode);
         try expect(result.operand1.signed_inc_to_ip == -2);
+    }
+}
+
+test "move to memory" {
+    const encoding: Encoding = .{
+        .opcode = Opcode.mov,
+        .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
+    };
+
+    // mov word [1000], 1
+    const bytes_buffer = [_]u8 { 0b11000111, 0b00000110, 0b11101000, 0b00000011, 0b00000001, 0b00000000 };
+
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.mov, result.opcode);
+        try expect(result.size == 6);
+        try expect(result.operand1.direct_address ==  1000);
     }
 }
