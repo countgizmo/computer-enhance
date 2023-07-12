@@ -194,13 +194,18 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     //
 
     // Reg/memory with register to either
-    try map.put(.{ 0b001110_00, 0b111111_00 }, .{ .opcode = .cmp, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+    try map.put(.{ 0b001110_00, 0b111111_00 }, .{
+        .opcode = .cmp,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+        .decoder_fn = &decodeRegMemToFromRegMem
+    });
 
     // Immediate to accumulator
     try map.put(.{ 0b0011110_0, 0b1111111_0 }, .{
         .opcode = .cmp,
-        .bits_enc = "opcode7:w1:data8:dataw8"}
-    );
+        .bits_enc = "opcode7:w1:data8:dataw8",
+        .decoder_fn = &decodeImmediateToAcc
+    });
 
 
     //
