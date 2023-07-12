@@ -15,6 +15,8 @@ const DecoderError = error {
     DataNotFound,
     AddressNotFound,
     CouldNotDecodeOperand,
+    InstructionPointerIncrementNotFound,
+    DecoderNotFound,
 };
 
 const OperandPosition = enum {
@@ -222,26 +224,26 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     //
     // Jumps
     //
-    try map.put(.{ 0b01110100, 0b11111111 }, .{ .opcode = .je, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111100, 0b11111111 }, .{ .opcode = .jl, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111110, 0b11111111 }, .{ .opcode = .jle, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110010, 0b11111111 }, .{ .opcode = .jb, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110110, 0b11111111 }, .{ .opcode = .jbe, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111010, 0b11111111 }, .{ .opcode = .jp, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110000, 0b11111111 }, .{ .opcode = .jo, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111000, 0b11111111 }, .{ .opcode = .js, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne_jnz, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111101, 0b11111111 }, .{ .opcode = .jnl, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111111, 0b11111111 }, .{ .opcode = .jnle, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110011, 0b11111111 }, .{ .opcode = .jnb, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110111, 0b11111111 }, .{ .opcode = .jnbe, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111011, 0b11111111 }, .{ .opcode = .jnp, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01110001, 0b11111111 }, .{ .opcode = .jno, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b01111001, 0b11111111 }, .{ .opcode = .jns, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b11100010, 0b11111111 }, .{ .opcode = .loop, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b11100001, 0b11111111 }, .{ .opcode = .loopz, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b11100000, 0b11111111 }, .{ .opcode = .loopnz, .bits_enc = "opcode8:ip-inc8" });
-    try map.put(.{ 0b11100011, 0b11111111 }, .{ .opcode = .jcxz, .bits_enc = "opcode8:ip-inc8" });
+    try map.put(.{ 0b01110100, 0b11111111 }, .{ .opcode = .je, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111100, 0b11111111 }, .{ .opcode = .jl, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111110, 0b11111111 }, .{ .opcode = .jle, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110010, 0b11111111 }, .{ .opcode = .jb, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110110, 0b11111111 }, .{ .opcode = .jbe, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111010, 0b11111111 }, .{ .opcode = .jp, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110000, 0b11111111 }, .{ .opcode = .jo, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111000, 0b11111111 }, .{ .opcode = .js, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne_jnz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111101, 0b11111111 }, .{ .opcode = .jnl, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111111, 0b11111111 }, .{ .opcode = .jnle, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110011, 0b11111111 }, .{ .opcode = .jnb, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110111, 0b11111111 }, .{ .opcode = .jnbe, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111011, 0b11111111 }, .{ .opcode = .jnp, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110001, 0b11111111 }, .{ .opcode = .jno, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01111001, 0b11111111 }, .{ .opcode = .jns, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b11100010, 0b11111111 }, .{ .opcode = .loop, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b11100001, 0b11111111 }, .{ .opcode = .loopz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b11100000, 0b11111111 }, .{ .opcode = .loopnz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b11100011, 0b11111111 }, .{ .opcode = .jcxz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
 
 
     return map;
@@ -505,61 +507,19 @@ fn decodeMovAccToMemory(decoding: Decoding, op_position: OperandPosition) !?inst
     return try getDirectAddress(decoding);
 }
 
-fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
-    if (op_position == .destination and decoding.ip_inc != null) {
+fn decodeJump(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (decoding.ip_inc == null) {
+        return error.InstructionPointerIncrementNotFound;
+    }
+
+    if (op_position == .destination) {
         return .{
             .signed_inc_to_ip = decoding.ip_inc.?,
         };
     }
 
-    // Jumps have only one operand
-    // Note(evgheni): maybe there's a better way to code this.
-    if (op_position == .source and decoding.ip_inc != null) {
-        return null;
-    }
-
-    if (decoding.addr_lo != null) {
-        if ((decoding.d == 0 and op_position == .destination) or
-            (decoding.d == 1 and op_position == .source)){
-            return .{
-                .register = .ax,
-            };
-        } else {
-            return try getDirectAddress(decoding);
-        }
-    }
-
-    if (decoding.mod) |mod| {
-        if (mod == 0b11) {
-            return getRegisterOperand(decoding, op_position);
-        } else if (isDirectAddress(decoding) and op_position == .source) {
-            return getDirectAddressDispOperand(decoding);
-        } else {
-            if (op_position == .source) {
-                if (decoding.d == 0) {
-                    return getRegisterOperand(decoding, op_position);
-                } else {
-                    return try getAddressCalculationOperand(decoding);
-                }
-            }
-
-            if (op_position == .destination) {
-                if (decoding.d == 1) {
-                    return getRegisterOperand(decoding, op_position);
-                } else {
-                    return try getAddressCalculationOperand(decoding);
-                }
-            }
-        }
-    }
-
-
-    //TODO(evgheni): provide sane default return or null or something
-    // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
-    const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
-    return .{
-        .register = @intToEnum(Register, register_idx),
-    };
+    // NOTE(evgheni): there's no source in jumps
+    return null;
 }
 
 fn getOpCode(encoding: Encoding, decoding: Decoding) Opcode {
@@ -694,7 +654,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
     if (encoding.decoder_fn) |decoder_fn| {
         decoder = decoder_fn;
     } else {
-        decoder = decodeOperand;
+        return error.DecoderNotFound;
     }
 
     if (decoder(decoding, OperandPosition.destination)) |op1| {
@@ -788,10 +748,10 @@ test "decoding instruction - 16-bit immediate" {
 }
 
 test "decoding effective memory address calculation to register" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
     const bytes_buffer = [2]u8{ 0b10001010, 0b00000000 };
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
@@ -1125,10 +1085,10 @@ test "decode sub immediate to accumulator" {
 
 
 test "decode jump" {
-    const encoding: Encoding = .{
-        .opcode = .je,
-        .bits_enc = "opcode8:ip-inc8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b01110100, 0b11111111 }).?;
 
     // test_label0:
     // jz test_label0
@@ -1141,10 +1101,10 @@ test "decode jump" {
 }
 
 test "move to memory" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b1100011_0, 0b1111111_0 }).?;
 
     // mov word [1000], 1
     const bytes_buffer = [_]u8 { 0b11000111, 0b00000110, 0b11101000, 0b00000011, 0b00000001, 0b00000000 };
