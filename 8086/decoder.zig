@@ -450,8 +450,7 @@ fn decodeImmediateToRegMem(decoding: Decoding, op_position: OperandPosition) !?i
     if (decoding.mod) |mod| {
         if (mod == 0b11) {
             return getRegisterOperand(decoding, op_position);
-        } else if (isDirectAddress(decoding) and op_position == .source) {
-            log.warn("decoding with style", .{});
+        } else if (isDirectAddress(decoding) and op_position == .destination) {
             return getDirectAddressDispOperand(decoding);
         } else {
             return try getAddressCalculationOperand(decoding);
@@ -1107,11 +1106,15 @@ test "move to memory" {
     const encoding = map.get(.{ 0b1100011_0, 0b1111111_0 }).?;
 
     // mov word [1000], 1
+    // seems to be generating the same binary as
+    // mov [1000], word 1
     const bytes_buffer = [_]u8 { 0b11000111, 0b00000110, 0b11101000, 0b00000011, 0b00000001, 0b00000000 };
 
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expectEqual(Opcode.mov, result.opcode);
         try expect(result.size == 6);
-        //try expect(result.operand1.direct_address ==  1000);
+        try expect(result.operand1.direct_address ==  1000);
+        try expect(result.operand2.?.immediate.value == 1);
+        try expect(result.operand2.?.immediate.size.? == .word);
     }
 }
