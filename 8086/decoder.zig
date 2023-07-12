@@ -158,20 +158,36 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     //
 
     // Reg/memory with register to either
-    try map.put(.{ 0b000000_00, 0b111111_00 }, .{ .opcode = .add, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+    try map.put(.{ 0b000000_00, 0b111111_00 }, .{
+        .opcode = .add,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+        .decoder_fn = &decodeRegMemToFromRegMem
+    });
 
     // Immediate to accumulator
-    try map.put(.{ 0b0000010_0, 0b1111111_0 }, .{ .opcode = .add, .bits_enc = "opcode7:w1:data8:dataw8"});
+    try map.put(.{ 0b0000010_0, 0b1111111_0 }, .{
+        .opcode = .add,
+        .bits_enc = "opcode7:w1:data8:dataw8",
+        .decoder_fn = &decodeImmediateToAcc
+    });
 
     //
     // sub
     //
 
     // Reg/memory with register to either
-    try map.put(.{ 0b001010_00, 0b111111_00 }, .{ .opcode = .sub, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8"});
+    try map.put(.{ 0b001010_00, 0b111111_00 }, .{
+        .opcode = .sub,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+        .decoder_fn = &decodeRegMemToFromRegMem
+    });
 
     // Immediate to accumulator
-    try map.put(.{ 0b0010110_0, 0b1111111_0 }, .{ .opcode = .sub, .bits_enc = "opcode7:w1:data8:dataw8"});
+    try map.put(.{ 0b0010110_0, 0b1111111_0 }, .{
+        .opcode = .sub,
+        .bits_enc = "opcode7:w1:data8:dataw8",
+        .decoder_fn = &decodeImmediateToAcc
+    });
 
     //
     // cmp
@@ -409,9 +425,6 @@ fn decodeRegMemToFromRegMem(decoding: Decoding, op_position: OperandPosition) !?
         }
     }
 
-
-    //TODO(evgheni): provide sane default return or null or something
-    // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
     const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     return .{
         .register = @intToEnum(Register, register_idx),
@@ -451,6 +464,20 @@ fn decodeMovImmediateToRegister(decoding: Decoding, op_position: OperandPosition
     }
 
     return getRegisterOperand(decoding, op_position);
+}
+
+fn decodeImmediateToAcc(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (decoding.data == null) {
+        return error.DataNotFound;
+    }
+
+    if (op_position == .destination) {
+        return .{
+            .register = .ax,
+        };
+    }
+
+    return try getDataOperand(decoding);
 }
 
 fn decodeMovMemoryToAcc(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
@@ -1015,10 +1042,10 @@ test "extract bits" {
 }
 
 test "decoding add reg-mem" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.add,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b000000_00, 0b111111_00 }).?;
 
     // add bx, [bx+si]
     const bytes_buffer = [_]u8 { 0b00000011, 0b00011000 };
@@ -1045,6 +1072,21 @@ test "decode add immediate" {
     }
 }
 
+test "decode add immediate to accumulator" {
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b0000010_0, 0b1111111_0 }).?;
+
+    // add ax, 1000
+    const bytes_buffer = [_]u8 { 0b00000101, 0b11101000, 0b00000011 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.add, result.opcode);
+        try expectEqual(Register.ax, result.operand1.register);
+        try expect(result.operand2.?.immediate.value == 1000);
+    }
+}
+
 test "decode sub immediate" {
     var allocator = std.testing.allocator;
     var map = try createMapOfOpcodes(allocator);
@@ -1060,6 +1102,22 @@ test "decode sub immediate" {
         try expect(result.size == 3);
     }
 }
+
+test "decode sub immediate to accumulator" {
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b0010110_0, 0b1111111_0 }).?;
+
+    // add ax, 1000
+    const bytes_buffer = [_]u8 { 0b00101101, 0b11101000, 0b00000011 };
+    if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
+        try expectEqual(Opcode.sub, result.opcode);
+        try expectEqual(Register.ax, result.operand1.register);
+        try expect(result.operand2.?.immediate.value == 1000);
+    }
+}
+
 
 test "decode jump" {
     const encoding: Encoding = .{
