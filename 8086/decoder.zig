@@ -119,24 +119,39 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     //
 
     // Register/memory to/from register/memory
-    try map.put(.{ 0b100010_00, 0b11111_000 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8" });
+    try map.put(.{ 0b100010_00, 0b11111_000 }, .{
+        .opcode = .mov,
+        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
+        .decoder_fn = &decodeRegMemToFromRegMem
+    });
 
     // Immediate to register
-    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{ .opcode = .mov, .bits_enc = "opcode4:w1:reg3:data8:dataw8", .decoder_fn = &decodeMovImmediateToRegister });
+    try map.put(.{ 0b1011_0000, 0b1111_0000 }, .{
+        .opcode = .mov,
+        .bits_enc = "opcode4:w1:reg3:data8:dataw8",
+        .decoder_fn = &decodeMovImmediateToRegister
+    });
 
     // Immediate to register/memory
-    try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{ 
+    try map.put(.{ 0b1100011_0, 0b1111111_0 }, .{
         .opcode = .mov, 
         .bits_enc = "opcode7:w1:mod2:pad3:rm3:disp-lo8:disp-hi8:data8:dataw8",
         .decoder_fn = &decodeImmediateToRegMem
     });
 
     // Memory to accumulator
-    // Note(evgheni): there's actually no d-bit, but there's a bit after w-bit that's 0 if mem->acc and 1 if acc->mem
-    // so we can use that as a "direction".
-    // Means the opcode part is not correct but I don't use it anyway.
-    try map.put(.{ 0b1010000_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
-    try map.put(.{ 0b1010001_0, 0b1111111_0 }, .{ .opcode = .mov, .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8"});
+    try map.put(.{ 0b1010000_0, 0b1111111_0 }, .{
+        .opcode = .mov,
+        .bits_enc = "opcode7:w1:addr-lo8:addr-hi8",
+        .decoder_fn = &decodeMovMemoryToAcc
+    });
+
+    // Accumulator to memory
+    try map.put(.{ 0b1010001_0, 0b1111111_0 }, .{
+        .opcode = .mov,
+        .bits_enc = "opcode7:w1:addr-lo8:addr-hi8",
+        .decoder_fn = &decodeMovAccToMemory
+    });
 
     //
     // add
@@ -369,6 +384,40 @@ fn getDirectAddress(decoding: Decoding) !instruction.Operand {
     return DecoderError.AddressNotFound;
 }
 
+fn decodeRegMemToFromRegMem(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (decoding.mod) |mod| {
+        if (mod == 0b11) {
+            return getRegisterOperand(decoding, op_position);
+        } else if (isDirectAddress(decoding) and op_position == .source) {
+            return getDirectAddressDispOperand(decoding);
+        } else {
+            if (op_position == .source) {
+                if (decoding.d == 0) {
+                    return getRegisterOperand(decoding, op_position);
+                } else {
+                    return try getAddressCalculationOperand(decoding);
+                }
+            }
+
+            if (op_position == .destination) {
+                if (decoding.d == 1) {
+                    return getRegisterOperand(decoding, op_position);
+                } else {
+                    return try getAddressCalculationOperand(decoding);
+                }
+            }
+        }
+    }
+
+
+    //TODO(evgheni): provide sane default return or null or something
+    // for now this is a dummy value to shut up the compiler cause I just want to test my code incrementally!
+    const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
+    return .{
+        .register = @intToEnum(Register, register_idx),
+    };
+}
+
 fn decodeImmediateToRegMem(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
     if (decoding.data == null) {
         return error.DataNotFound;
@@ -402,6 +451,26 @@ fn decodeMovImmediateToRegister(decoding: Decoding, op_position: OperandPosition
     }
 
     return getRegisterOperand(decoding, op_position);
+}
+
+fn decodeMovMemoryToAcc(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (op_position == .destination) {
+        return .{
+            .register = .ax,
+        };
+    }
+
+    return try getDirectAddress(decoding);
+}
+
+fn decodeMovAccToMemory(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
+    if (op_position == .source) {
+        return .{
+            .register = .ax,
+        };
+    }
+
+    return try getDirectAddress(decoding);
 }
 
 fn decodeOperand(decoding: Decoding, op_position: OperandPosition) !?instruction.Operand {
@@ -646,11 +715,11 @@ test "decoding many instructions" {
 }
 
 test "decoding instruction" {
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
     const bytes_buffer: [2]u8 = .{ 0b10001001, 0b11011001 };
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     try expect(result.?.opcode == Opcode.mov);
@@ -702,10 +771,10 @@ test "decoding effective memory address calculation to register" {
 }
 
 test "decoding effective memory address calculation with 8-bit displacement" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
     const bytes_buffer = [3]u8 { 0b10001011, 0b01010110, 0b00000000 };
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
@@ -730,10 +799,10 @@ test "decoding effective memory address calculation with 8-bit displacement" {
 
 
 test "decoding effective memory address calculation with 16-bit displacement" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
 
     // mov al, [bx + si + 4999]
 
@@ -748,10 +817,10 @@ test "decoding effective memory address calculation with 16-bit displacement" {
 }
 
 test "decoding memory address calculation in destination" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
 
     // mov [bx + di], cx
 
@@ -780,10 +849,10 @@ test "decoding multiple source address calculations" {
 }
 
 test "decoding signed displacement" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
 
     // mov ax, [bx + di - 37]
 
@@ -840,10 +909,10 @@ test "decoding explicit sizes" {
 }
 
 test "decoding direct address" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:mod2:reg3:rm3:disp-lo8:disp-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b100010_00, 0b11111_000 }).?;
 
     // mov bp, [5]
     const bytes_buffer = [_]u8 { 0b10001011, 0b00101110, 0b00000101, 0b00000000 };
@@ -865,10 +934,10 @@ test "decoding direct address" {
 }
 
 test "decoding memory to accumulator" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b1010000_0, 0b1111111_0 }).?;
 
     // mov ax, [2555]
     const bytes_buffer = [_]u8 { 0b10100001, 0b11111011, 0b00001001 };
@@ -888,10 +957,10 @@ test "decoding memory to accumulator" {
 }
 
 test "decoding accumulator to memory" {
-    const encoding: Encoding = .{
-        .opcode = Opcode.mov,
-        .bits_enc = "opcode6:d1:w1:addr-lo8:addr-hi8",
-    };
+    var allocator = std.testing.allocator;
+    var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
+    const encoding = map.get(.{ 0b1010001_0, 0b1111111_0 }).?;
 
     // mov [2554], ax
     const bytes_buffer = [_]u8 { 0b10100011, 0b11111010, 0b00001001 };
