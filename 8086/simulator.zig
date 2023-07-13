@@ -5,6 +5,7 @@ const decoder = @import("decoder.zig");
 const cpu = @import("cpu.zig");
 const register_store = @import("register_store.zig");
 const flags = @import("flags.zig");
+const memory = @import("memory.zig");
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -28,5 +29,6 @@ pub fn main() !void {
         try register_store.printStatus();
         try register_store.printIP();
         try flags.printStatus();
+        try memory.printStatus(1000, 1008);
     }
 }

@@ -51,6 +51,12 @@ fn movToRegister(destination: Register, source: Operand) void {
         .register => |reg| {
             register_store.writeFromRegister(destination, reg);
         },
+        .direct_address => |address| {
+            const lo = memory.load(address);
+            const hi = memory.load(address+1);
+            const val = utils.combineU8(lo, hi);
+            register_store.write(destination, val);
+        },
         else => {
             return;
         }
@@ -117,15 +123,11 @@ fn execMov(inst: Instruction) !void {
         .register => |reg| {
             return movToRegister(reg, inst.operand2.?);
         },
-        .mem_calc_no_disp => |mem_calc_no_disp| {
-            switch (mem_calc_no_disp) {
-                .mem_calc => |calc| {
-                    return movToAddressWithDisplacement(calc, inst.operand2.?);
-                },
-                .direct_address => |address| {
-                    return movToDirectAddress(address, inst.operand2.?);
-                }
-            }
+        .direct_address => |address| {
+            return movToDirectAddress(address, inst.operand2.?);
+        },
+        .mem_calc_with_disp => |calc| {
+            return movToAddressWithDisplacement(calc, inst.operand2.?);
         },
         else => {
             return;
@@ -323,16 +325,13 @@ test "moving to low register" {
     try execInstruction(inst1);
     try execInstruction(inst2);
     try expect(register_store.read(.bl) == 0x33);
-    try register_store.printStatus();
 }
 
 test "moving byte immediate to memory" {
     const inst: Instruction = .{
         .opcode = .mov,
         .operand1 = .{
-            .mem_calc_no_disp = .{
-                .direct_address = 1000
-            }
+            .direct_address = 1000
         },
         .operand2 = .{
             .immediate = .{ .value = 250, .size = .byte },
@@ -340,6 +339,7 @@ test "moving byte immediate to memory" {
     };
 
     try execInstruction(inst);
+    try memory.printStatus(1000, 1002);
     try expect(memory.load(1000) == 250);
     try expect(memory.load(1001) == 0);
 }
@@ -348,9 +348,7 @@ test "moving word immediate to memory" {
     const inst: Instruction = .{
         .opcode = .mov,
         .operand1 = .{
-            .mem_calc_no_disp = .{
-                .direct_address = 2000
-            }
+            .direct_address = 2000
         },
         .operand2 = .{
             .immediate = .{ .value = 0b0000010011100010, .size = .word },
@@ -430,8 +428,6 @@ test "subtracting two registers with negative result" {
 
     const result = register_store.read(.bx);
 
-    try register_store.printStatus();
-    try flags.printStatus();
     try expect(@bitCast(i16, result) == -7934);
     try expect(flags.getFlag(.sf) == 1);
     try expect(flags.getFlag(.zf) == 0);
@@ -477,8 +473,6 @@ test "subtracting two registers with zero result" {
 
     const result = register_store.read(.bx);
 
-    try register_store.printStatus();
-    try flags.printStatus();
     try expect(@bitCast(i16, result) == 0);
     try expect(flags.getFlag(.sf) == 0);
     try expect(flags.getFlag(.zf) == 1);
@@ -567,9 +561,6 @@ test "comparing flow" {
     try execInstruction(inst6);
 
     const result = register_store.read(.bp);
-
-    try register_store.printStatus();
-    try flags.printStatus();
 
     try expect(@bitCast(i16, result) == 999);
     try expect(flags.getFlag(.sf) == 0);

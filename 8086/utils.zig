@@ -1,3 +1,7 @@
+const std = @import("std");
+const expect = std.testing.expect;
+const log = std.log;
+
 // Keeps the low 8 bits, throws away the rest.
 pub fn u16ToU8(value: u16) u8 {
     return @intCast(u8, value & 0b11111111);
@@ -14,4 +18,16 @@ pub fn splitU16(value: u16) LoHiBytes {
     const hi_part = @intCast(u8, value >> 8);
 
     return .{low_part, hi_part};
+}
+
+pub fn combineU8(lo: u8, hi: u8) u16 {
+    return (@intCast(u16, hi) * 256) + lo;
+}
+
+test "combine two u8" {
+    var lo: u8 = 0b0000_0001;
+    var hi: u8 = 0b0000_0000;
+    var combined = combineU8(lo, hi);
+
+    try expect(combined == 0b0000_0000_0000_0001);
 }
