@@ -11,7 +11,7 @@ pub const MemCalc = struct {
     disp: ?Displacement = null,
 };
 
-pub const MemCalcNoDisp = union {
+pub const MemCalcNoDisp = union(enum) {
     mem_calc: MemCalc,
     direct_address: u16,
 };

@@ -3,6 +3,7 @@ const log = std.log;
 const ArrayList = std.ArrayList;
 const expect = std.testing.expect;
 const register_store = @import("register_store.zig");
+const memory = @import("memory.zig");
 const printer = @import("printer.zig");
 const Register = register_store.Register;
 const instruction = @import("instruction.zig");
@@ -55,13 +56,46 @@ fn movToRegister(destination: Register, source: Operand) void {
     }
 }
 
+fn movToDirectAddress(address: u16, source: Operand) void {
+    switch (source) {
+        .immediate => |immediate| {
+            if (immediate.size) |size| {
+                switch (size) {
+                    .byte => {
+                        const val = immediate.value & 0b11111111;
+                        memory.store(address, @intCast(u8, val));
+                    },
+                    .word => {
+                        const low_part = immediate.value & 0b11111111;
+                        const hi_part = (immediate.value >> 8);
+                        memory.store(address, @intCast(u8, low_part));
+                        memory.store(address+1, @intCast(u8, hi_part));
+                    }
+                }
+            }
+        },
+        else => {
+            return;
+        }
+    }
+}
+
 fn execMov(inst: Instruction) !void {
+    if (inst.operand2 == null) {
+        return error.SourceNotFound;
+    }
+
     switch (inst.operand1) {
         .register => |reg| {
-            if (inst.operand2) |operand2| {
-                return movToRegister(reg, operand2);
-            } else {
-                return error.SourceNotFound;
+            return movToRegister(reg, inst.operand2.?);
+        },
+        .mem_calc_no_disp => |mem_calc_no_disp| {
+            switch (mem_calc_no_disp) {
+                .mem_calc => |_| {
+                },
+                .direct_address => |address| {
+                    return movToDirectAddress(address, inst.operand2.?);
+                }
             }
         },
         else => {
@@ -166,7 +200,7 @@ fn execAdd(inst: Instruction) !void {
     }
 }
 
-pub fn execJneJnz(inst: Instruction) !void {
+fn execJneJnz(inst: Instruction) !void {
     const zf = flags.getFlag(.zf);
     const ip = register_store.readIP();
     if (zf != 1) {
@@ -261,6 +295,42 @@ test "moving to low register" {
     try execInstruction(inst2);
     try expect(register_store.read(.bl) == 0x33);
     try register_store.printStatus();
+}
+
+test "moving byte immediate to memory" {
+    const inst: Instruction = .{
+        .opcode = .mov,
+        .operand1 = .{
+            .mem_calc_no_disp = .{
+                .direct_address = 1000
+            }
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 250, .size = .byte },
+        },
+    };
+
+    try execInstruction(inst);
+    try expect(memory.load(1000) == 250);
+    try expect(memory.load(1001) == 0);
+}
+
+test "moving word immediate to memory" {
+    const inst: Instruction = .{
+        .opcode = .mov,
+        .operand1 = .{
+            .mem_calc_no_disp = .{
+                .direct_address = 2000
+            }
+        },
+        .operand2 = .{
+            .immediate = .{ .value = 0b0000010011100010, .size = .word },
+        },
+    };
+
+    try execInstruction(inst);
+    try expect(memory.load(2000) == 0b11100010);
+    try expect(memory.load(2001) == 0b00000100);
 }
 
 test "moving to high register" {
@@ -512,7 +582,6 @@ test "get instruction by IP" {
         .size = 3,
     };
 
-    
     var allocator = std.testing.allocator;
     var instructions = ArrayList(Instruction).init(allocator);
     defer instructions.deinit();
