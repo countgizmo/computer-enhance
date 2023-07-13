@@ -43,6 +43,12 @@ fn add(a: u16, b: u16) u16 {
     return @bitCast(u16, result);
 }
 
+fn readWordFromMemory(address: u16) u16 {
+    const lo = memory.load(address);
+    const hi = memory.load(address+1);
+    return utils.combineU8(lo, hi);
+}
+
 fn writeFromAddressToRegister(destination: Register, address: u16) void {
     const lo = memory.load(address);
     const hi = memory.load(address+1);
@@ -232,18 +238,33 @@ fn execCmp(inst: Instruction) !void {
 }
 
 fn addToRegister(destination: Register, source: Operand) void {
+    var result: u16 = undefined;
+    const dst = register_store.read(destination);
+    var src: u16 = undefined;
+
     switch (source) {
         .immediate => |immediate| {
-            const src = immediate.value;
-            const dst = register_store.read(destination);
-            const result = add(dst, src);
-            flagsCheck(result);
-            register_store.write(destination, result);
+            src = immediate.value;
+        },
+        .mem_calc_no_disp => |mem_calc_no_disp| {
+            switch (mem_calc_no_disp) {
+                .mem_calc => |calc| {
+                    const address = calculateAddress(calc); 
+                    src = readWordFromMemory(address);
+                },
+                .direct_address => |address| {
+                    src = readWordFromMemory(address);
+                }
+            }
         },
         else => {
             return;
         }
     }
+
+    result = add(dst, src);
+    register_store.write(destination, result);
+    flagsCheck(result);
 }
 
 fn execAdd(inst: Instruction) !void {
