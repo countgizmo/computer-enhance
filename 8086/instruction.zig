@@ -5,6 +5,12 @@ const Displacement = union(enum) {
     word: i16,
 };
 
+// TODO(evgheni): separate calculations with disp and without disp
+// The MemCalc is a bit too generic at the moment and is used in
+// MemCalcNoDisp, which is kinda weird, cause it might have a disp.
+// MemCalcNoDisp can only have direct address or a calculation with two registers.
+// MemCalc without displacement on the other hand cannot have dict address,
+// always have a displacement and sometimes have a second register.
 pub const MemCalc = struct {
     register1: Register,
     register2: ?Register = null,
@@ -12,7 +18,7 @@ pub const MemCalc = struct {
 };
 
 pub const MemCalcNoDisp = union(enum) {
-    mem_calc: MemCalc,
+    mem_calc: MemCalc, 
     direct_address: u16,
 };
 

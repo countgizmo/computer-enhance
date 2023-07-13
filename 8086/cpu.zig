@@ -2,6 +2,7 @@ const std = @import("std");
 const log = std.log;
 const ArrayList = std.ArrayList;
 const expect = std.testing.expect;
+const utils = @import("utils.zig");
 const register_store = @import("register_store.zig");
 const memory = @import("memory.zig");
 const printer = @import("printer.zig");
@@ -62,14 +63,13 @@ fn movToDirectAddress(address: u16, source: Operand) void {
             if (immediate.size) |size| {
                 switch (size) {
                     .byte => {
-                        const val = immediate.value & 0b11111111;
-                        memory.store(address, @intCast(u8, val));
+                        const val = utils.u16ToU8(immediate.value);
+                        memory.store(address, val);
                     },
                     .word => {
-                        const low_part = immediate.value & 0b11111111;
-                        const hi_part = (immediate.value >> 8);
-                        memory.store(address, @intCast(u8, low_part));
-                        memory.store(address+1, @intCast(u8, hi_part));
+                        const val = utils.splitU16(immediate.value);
+                        memory.store(address, val[0]);
+                        memory.store(address+1, val[1]);
                     }
                 }
             }
@@ -78,6 +78,34 @@ fn movToDirectAddress(address: u16, source: Operand) void {
             return;
         }
     }
+}
+
+fn calculateAddress(calc: instruction.MemCalc) u16 {
+    var address = register_store.read(calc.register1);
+
+    if (calc.register2) |reg2| {
+        address += register_store.read(reg2);
+    }
+
+    if (calc.disp) |disp| {
+        switch (disp) {
+            .byte => |byte_disp| {
+                const result = @bitCast(i16, address) + @bitCast(i8, byte_disp);
+                address = @bitCast(u16, result);
+            },
+            .word => |word_disp| {
+                const result = @bitCast(i16, address) + @bitCast(i16, word_disp);
+                address = @bitCast(u16, result);
+            }
+        }
+    }
+
+    return address;
+}
+
+fn movToAddressWithDisplacement(calc: instruction.MemCalc, source: Operand) void {
+    const address = calculateAddress(calc); 
+    return movToDirectAddress(address, source);
 }
 
 fn execMov(inst: Instruction) !void {
@@ -91,7 +119,8 @@ fn execMov(inst: Instruction) !void {
         },
         .mem_calc_no_disp => |mem_calc_no_disp| {
             switch (mem_calc_no_disp) {
-                .mem_calc => |_| {
+                .mem_calc => |calc| {
+                    return movToAddressWithDisplacement(calc, inst.operand2.?);
                 },
                 .direct_address => |address| {
                     return movToDirectAddress(address, inst.operand2.?);
