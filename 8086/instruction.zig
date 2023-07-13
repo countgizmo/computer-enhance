@@ -47,7 +47,7 @@ pub const Opcode = enum {
     jp,
     jo,
     js,
-    jne_jnz,
+    jnz,
     jnl,
     jnle,
     jnb,

@@ -43,6 +43,13 @@ fn add(a: u16, b: u16) u16 {
     return @bitCast(u16, result);
 }
 
+fn writeFromAddressToRegister(destination: Register, address: u16) void {
+    const lo = memory.load(address);
+    const hi = memory.load(address+1);
+    const val = utils.combineU8(lo, hi);
+    register_store.write(destination, val);
+}
+
 fn movToRegister(destination: Register, source: Operand) void {
     switch (source) {
         .immediate => |immediate| {
@@ -52,10 +59,18 @@ fn movToRegister(destination: Register, source: Operand) void {
             register_store.writeFromRegister(destination, reg);
         },
         .direct_address => |address| {
-            const lo = memory.load(address);
-            const hi = memory.load(address+1);
-            const val = utils.combineU8(lo, hi);
-            register_store.write(destination, val);
+            writeFromAddressToRegister(destination, address);
+        },
+        .mem_calc_no_disp => |mem_calc_no_disp| {
+            switch (mem_calc_no_disp) {
+                .mem_calc => |calc| {
+                    const address = calculateAddress(calc); 
+                    writeFromAddressToRegister(destination, address);
+                },
+                .direct_address => |address| {
+                    writeFromAddressToRegister(destination, address);
+                }
+            }
         },
         else => {
             return;
@@ -79,6 +94,11 @@ fn movToDirectAddress(address: u16, source: Operand) void {
                     }
                 }
             }
+        },
+        .register => |reg| {
+            const val = utils.splitU16(register_store.read(reg));
+            memory.store(address, val[0]);
+            memory.store(address+1, val[1]);
         },
         else => {
             return;
@@ -125,6 +145,16 @@ fn execMov(inst: Instruction) !void {
         },
         .direct_address => |address| {
             return movToDirectAddress(address, inst.operand2.?);
+        },
+        .mem_calc_no_disp => |mem_calc_no_disp| {
+            switch (mem_calc_no_disp) {
+                .mem_calc => |calc| {
+                    return movToAddressWithDisplacement(calc, inst.operand2.?);
+                },
+                .direct_address => |address| {
+                    return movToDirectAddress(address, inst.operand2.?);
+                }
+            }
         },
         .mem_calc_with_disp => |calc| {
             return movToAddressWithDisplacement(calc, inst.operand2.?);
@@ -254,7 +284,7 @@ pub fn execInstruction(inst: Instruction) !void {
         .add => {
             try execAdd(inst);
         },
-        .jne_jnz => {
+        .jnz => {
             try execJneJnz(inst);
         },
         else => {
@@ -339,7 +369,6 @@ test "moving byte immediate to memory" {
     };
 
     try execInstruction(inst);
-    try memory.printStatus(1000, 1002);
     try expect(memory.load(1000) == 250);
     try expect(memory.load(1001) == 0);
 }

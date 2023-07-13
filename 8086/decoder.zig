@@ -232,7 +232,7 @@ fn createMapOfOpcodes(allocator: Allocator) !std.AutoArrayHashMap([2]u8, Encodin
     try map.put(.{ 0b01111010, 0b11111111 }, .{ .opcode = .jp, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
     try map.put(.{ 0b01110000, 0b11111111 }, .{ .opcode = .jo, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
     try map.put(.{ 0b01111000, 0b11111111 }, .{ .opcode = .js, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
-    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jne_jnz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
+    try map.put(.{ 0b01110101, 0b11111111 }, .{ .opcode = .jnz, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
     try map.put(.{ 0b01111101, 0b11111111 }, .{ .opcode = .jnl, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
     try map.put(.{ 0b01111111, 0b11111111 }, .{ .opcode = .jnle, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });
     try map.put(.{ 0b01110011, 0b11111111 }, .{ .opcode = .jnb, .bits_enc = "opcode8:ip-inc8", .decoder_fn = &decodeJump });

@@ -129,7 +129,7 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     } else {
         switch (inst.opcode) {
             .je, .jl, .jle, .jb, .jbe, .jp,
-            .jo, .js, .jne_jnz, .jnl, .jnle, .jnb,
+            .jo, .js, .jnz, .jnl, .jnle, .jnb,
             .jnbe, .jnp, .jno, .jns, .loop,
             .loopz, .loopnz, .jcxz => {
                 return try fmt.allocPrint(allocator, "{s} $+2{s}", .{@tagName(inst.opcode), operand1});
