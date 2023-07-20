@@ -33,6 +33,11 @@ fn flagsCheck(value: u16) void {
     }
 }
 
+fn cmp(a: u16, b: u16) void {
+    const result = sub(a, b);
+    flagsCheck(result);
+}
+
 fn sub(a: u16, b: u16) u16 {
     const result: i16 = @bitCast(i16, a) - @bitCast(i16, b);
     return @bitCast(u16, result);
@@ -209,12 +214,14 @@ fn execSub(inst: Instruction) !void {
 }
 
 fn cmpWithRegister(destination: Register, source: Operand) void {
+    const dst = register_store.read(destination);
     switch (source) {
         .register => |reg| {
             const src = register_store.read(reg);
-            const dst = register_store.read(destination);
-            const result = sub(dst, src);
-            flagsCheck(result);
+            cmp(dst, src);
+        },
+        .immediate => |immediate| {
+            cmp(dst, immediate.value);
         },
         else => {
             return;
