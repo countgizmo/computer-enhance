@@ -298,6 +298,14 @@ fn execJneJnz(inst: Instruction) !void {
     }
 }
 
+fn execLoop(inst: Instruction) !void {
+    const source = .{
+        .immediate = .{ .value = 1},
+    };
+    subFromRegister(.cx, source);
+    try execJneJnz(inst);
+}
+
 pub fn execInstruction(inst: Instruction) !void {
     switch (inst.opcode) {
         .mov => {
@@ -314,6 +322,9 @@ pub fn execInstruction(inst: Instruction) !void {
         },
         .jnz => {
             try execJneJnz(inst);
+        },
+        .loop => {
+            try execLoop(inst);
         },
         else => {
             return;
