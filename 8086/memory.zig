@@ -27,3 +27,10 @@ pub fn printStatus(start: u16, end: u16) !void {
     }
     try stdout.print("=================\n", .{});
 }
+
+pub fn dump() !void {
+    const file = try std.fs.cwd().createFile("dump.data", .{});
+    defer file.close();
+
+    try file.writeAll(&memory);
+}

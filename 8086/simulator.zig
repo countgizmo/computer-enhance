@@ -14,10 +14,19 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(arena.allocator());
     defer std.process.argsFree(arena.allocator(), args);
 
-    const file = try std.fs.cwd().openFile(args[1], .{});
-    defer file.close();
+    var file_name: []u8 = undefined;
+    var should_dump = false;
 
-    const file_name = args[1];
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--dump")) {
+            should_dump = true;
+        } else {
+            file_name = arg;
+        }
+    }
+
+    const file = try std.fs.cwd().openFile(file_name, .{});
+    defer file.close();
 
     var buffer: [1024]u8 = undefined;
     const bytes_read = try file.readAll(&buffer);
@@ -29,6 +38,10 @@ pub fn main() !void {
         try register_store.printStatus();
         try register_store.printIP();
         try flags.printStatus();
-        try memory.printStatus(1000, 1008);
+        try memory.printStatus(256, 300);
+    }
+
+    if (should_dump) {
+        try memory.dump();
     }
 }
