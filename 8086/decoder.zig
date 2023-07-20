@@ -310,32 +310,35 @@ fn getRegisterOperand(decoding: Decoding, op_position: OperandPosition) instruct
 
 fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Operand {
     if (decoding.mod.? == 0b00) {
-        const mem_calc = instruction.MemCalcTable[decoding.rm];
         return .{
-            .mem_calc_no_disp = .{ .mem_calc = mem_calc },
+            .mem_calc_no_disp = instruction.MemCalcTable[decoding.rm],
         };
     }
 
     if (decoding.mod.? == 0b01) {
         var mem_calc = instruction.MemCalcTable[decoding.rm];
-        mem_calc.disp = .{
-            .byte = @bitCast(i8, decoding.disp_lo.?),
-        };
-
         return .{
-            .mem_calc_with_disp = mem_calc,
+            .mem_calc_with_disp = .{
+                .register1 = mem_calc.register1,
+                .register2 = mem_calc.register2,
+                .disp = .{
+                    .byte = @bitCast(i8, decoding.disp_lo.?),
+                }
+            },
         };
     }
 
     if (decoding.mod.? == 0b10) {
         var mem_calc = instruction.MemCalcTable[decoding.rm];
         const word = @as(u16, decoding.disp_hi.?) << 8 | decoding.disp_lo.?;
-        mem_calc.disp = .{
-            .word = @bitCast(i16, word),
-        };
-
         return .{
-            .mem_calc_with_disp = mem_calc,
+            .mem_calc_with_disp = .{
+                .register1 = mem_calc.register1,
+                .register2 = mem_calc.register2,
+                .disp = .{
+                    .word = @bitCast(i16, word),
+                }
+            },
         };
     }
 
@@ -672,11 +675,9 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
 
 pub fn decode(allocator: Allocator, buffer: []const u8, buffer_len: usize, offset: u16) !?[]Instruction {
     var map = try createMapOfOpcodes(allocator);
+    defer map.deinit();
     var iterator = map.iterator();
 
-    defer {
-        map.deinit();
-    }
     var instructions = ArrayList(Instruction).init(allocator);
     var current_offset = offset;
 
@@ -757,8 +758,8 @@ test "decoding effective memory address calculation to register" {
     try expect(result.?.opcode == Opcode.mov);
     try expect(result.?.size == 2);
     try expectEqual(Register.al, result.?.operand1.register);
-    try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register1 == Register.bx);
-    try expect(result.?.operand2.?.mem_calc_no_disp.mem_calc.register2 == Register.si);
+    try expect(result.?.operand2.?.mem_calc_no_disp.register1 == Register.bx);
+    try expect(result.?.operand2.?.mem_calc_no_disp.register2 == Register.si);
 }
 
 test "decoding effective memory address calculation with 8-bit displacement" {
@@ -774,7 +775,7 @@ test "decoding effective memory address calculation with 8-bit displacement" {
     try expect(result.?.opcode == Opcode.mov);
     try expectEqual(Register.dx, result.?.operand1.register);
     try expectEqual(Register.bp, result.?.operand2.?.mem_calc_with_disp.register1);
-    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.byte == 0);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.byte == 0);
 
     // mov ah, [bx + si + 4]
 
@@ -785,7 +786,7 @@ test "decoding effective memory address calculation with 8-bit displacement" {
     try expectEqual(Register.ah, result_2.?.operand1.register);
     try expectEqual(Register.bx, result_2.?.operand2.?.mem_calc_with_disp.register1);
     try expectEqual(Register.si, result_2.?.operand2.?.mem_calc_with_disp.register2.?);
-    try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.?.byte == 4);
+    try expect(result_2.?.operand2.?.mem_calc_with_disp.disp.byte == 4);
 }
 
 
@@ -804,7 +805,7 @@ test "decoding effective memory address calculation with 16-bit displacement" {
     try expectEqual(Register.al, result.?.operand1.register);
     try expectEqual(Register.bx, result.?.operand2.?.mem_calc_with_disp.register1);
     try expectEqual(Register.si, result.?.operand2.?.mem_calc_with_disp.register2.?);
-    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.word == 4999);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.word == 4999);
 }
 
 test "decoding memory address calculation in destination" {
@@ -819,8 +820,8 @@ test "decoding memory address calculation in destination" {
     const result = try decodeInstruction(&bytes_buffer, 0, encoding);
 
     try expect(result.?.opcode == Opcode.mov);
-    try expectEqual(Register.bx, result.?.operand1.mem_calc_no_disp.mem_calc.register1);
-    try expectEqual(Register.di, result.?.operand1.mem_calc_no_disp.mem_calc.register2.?);
+    try expectEqual(Register.bx, result.?.operand1.mem_calc_no_disp.register1);
+    try expectEqual(Register.di, result.?.operand1.mem_calc_no_disp.register2.?);
     try expectEqual(Register.cx, result.?.operand2.?.register);
 }
 
@@ -854,7 +855,7 @@ test "decoding signed displacement" {
     try expectEqual(Register.ax, result.?.operand1.register);
     try expectEqual(Register.bx, result.?.operand2.?.mem_calc_with_disp.register1);
     try expectEqual(Register.di, result.?.operand2.?.mem_calc_with_disp.register2.?);
-    try expect(result.?.operand2.?.mem_calc_with_disp.disp.?.byte == -37);
+    try expect(result.?.operand2.?.mem_calc_with_disp.disp.byte == -37);
 
     // mov [si - 300], cx
 
@@ -864,7 +865,7 @@ test "decoding signed displacement" {
     try expect(result_2.?.opcode == Opcode.mov);
 
     try expectEqual(Register.si, result_2.?.operand1.mem_calc_with_disp.register1);
-    try expect(result_2.?.operand1.mem_calc_with_disp.disp.?.word == -300);
+    try expect(result_2.?.operand1.mem_calc_with_disp.disp.word == -300);
 
     try expectEqual(Register.cx, result_2.?.operand2.?.register);
 }
@@ -880,8 +881,8 @@ test "decoding explicit sizes" {
     const bytes_buffer = [3]u8 { 0b11000110, 0b00000011, 0b00000111 };
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expect(result.opcode == Opcode.mov);
-        try expectEqual(Register.bp, result.operand1.mem_calc_no_disp.mem_calc.register1);
-        try expectEqual(Register.di, result.operand1.mem_calc_no_disp.mem_calc.register2.?);
+        try expectEqual(Register.bp, result.operand1.mem_calc_no_disp.register1);
+        try expectEqual(Register.di, result.operand1.mem_calc_no_disp.register2.?);
 
         try expect(result.operand2.?.immediate.value == 7);
         try expectEqual(instruction.DataSize.byte, result.operand2.?.immediate.size.?);
@@ -892,7 +893,7 @@ test "decoding explicit sizes" {
     if (try decodeInstruction(&bytes_buffer_2, 0, encoding)) |result| {
         try expect(result.opcode == Opcode.mov);
         try expectEqual(Register.di, result.operand1.mem_calc_with_disp.register1);
-        try expect(result.operand1.mem_calc_with_disp.disp.?.word == 901);
+        try expect(result.operand1.mem_calc_with_disp.disp.word == 901);
 
         try expect(result.operand2.?.immediate.value == 347);
         try expectEqual(instruction.DataSize.word, result.operand2.?.immediate.size.?);
@@ -1016,8 +1017,8 @@ test "decoding add reg-mem" {
     if (try decodeInstruction(&bytes_buffer, 0, encoding)) |result| {
         try expectEqual(Opcode.add, result.opcode);
         try expectEqual(Register.bx, result.operand1.register);
-        try expectEqual(Register.bx, result.operand2.?.mem_calc_no_disp.mem_calc.register1);
-        try expectEqual(Register.si, result.operand2.?.mem_calc_no_disp.mem_calc.register2.?);
+        try expectEqual(Register.bx, result.operand2.?.mem_calc_no_disp.register1);
+        try expectEqual(Register.si, result.operand2.?.mem_calc_no_disp.register2.?);
     }
 }
 

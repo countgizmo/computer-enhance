@@ -36,53 +36,46 @@ fn operandToStr(allocator: Allocator, operand: Operand) ![]u8 {
             return fmt.allocPrint(allocator, "{d}", .{val.value});
         },
         .mem_calc_no_disp => |val| {
-            if (val.mem_calc.register2 != null) {
+            if (val.register2 != null) {
                 return fmt.allocPrint(allocator,
-                    "[{s} + {s}]", .{@tagName(val.mem_calc.register1), @tagName(val.mem_calc.register2.?)});
+                    "[{s} + {s}]", .{@tagName(val.register1), @tagName(val.register2.?)});
             }
             return fmt.allocPrint(allocator,
-                "[{s}]", .{@tagName(val.mem_calc.register1)});
+                "[{s}]", .{@tagName(val.register1)});
         },
         .mem_calc_with_disp => |val| {
             if (val.register2 != null) {
-                if (val.disp) |disp| {
-                    switch (disp) {
-                        .byte => |byte_disp| {
-                            const sign: u8 = if (byte_disp >= 0) '+' else '-';
-                            const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
-                            return fmt.allocPrint(allocator,
-                                "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
-                        },
-                        .word => |word_disp| {
-                            const sign: u8 = if (word_disp >= 0) '+' else '-';
-                            const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
-                            return fmt.allocPrint(allocator,
-                                "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
-                        },
-                    }
-                } else {
-                    return fmt.allocPrint(allocator,
-                        "[{s} + {s}]", .{@tagName(val.register1), @tagName(val.register2.?)});
+                switch (val.disp) {
+                    .byte => |byte_disp| {
+                        const sign: u8 = if (byte_disp >= 0) '+' else '-';
+                        const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
+                        return fmt.allocPrint(allocator,
+                        "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
+                    },
+                    .word => |word_disp| {
+                        const sign: u8 = if (word_disp >= 0) '+' else '-';
+                        const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
+                        return fmt.allocPrint(allocator,
+                        "[{s} + {s} {c} {d}]", .{@tagName(val.register1), @tagName(val.register2.?), sign, display_value});
+                    },
                 }
             }
 
-            if (val.disp) |disp| {
-                switch (disp) {
-                    .byte => |byte_disp| {
-                        if (byte_disp != 0) {
-                            const sign: u8 = if (byte_disp >= 0) '+' else '-';
-                            const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
-                            return fmt.allocPrint(allocator,
-                                "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
-                        }
-                    },
-                    .word => |word_disp| {
-                        if (word_disp != 0) {
-                            const sign: u8 = if (word_disp >= 0) '+' else '-';
-                            const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
-                            return fmt.allocPrint(allocator,
-                                "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
-                        }
+            switch (val.disp) {
+                .byte => |byte_disp| {
+                    if (byte_disp != 0) {
+                        const sign: u8 = if (byte_disp >= 0) '+' else '-';
+                        const display_value = if (byte_disp >= 0) byte_disp else byte_disp * -1;
+                        return fmt.allocPrint(allocator,
+                        "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
+                    }
+                },
+                .word => |word_disp| {
+                    if (word_disp != 0) {
+                        const sign: u8 = if (word_disp >= 0) '+' else '-';
+                        const display_value = if (word_disp >= 0) word_disp else word_disp * -1;
+                        return fmt.allocPrint(allocator,
+                        "[{s} {c} {d}]", .{@tagName(val.register1), sign, display_value});
                     }
                 }
             }
@@ -143,10 +136,70 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     return &.{};
 }
 
-pub fn printInstruction(allocator: Allocator, inst: Instruction) !void {
+fn getEAClocks(operand: Operand) usize {
+    switch (operand) {
+        .direct_address => {
+            return 6;
+        },
+        else => {}
+    }
+
+    return 0;
+}
+
+fn getMovClocks(inst: Instruction) usize {
+    switch(inst.operand1) {
+        .register => {
+            switch(inst.operand2.?) {
+                .register => {
+                    return 2;
+                },
+                .immediate => {
+                    return 4;
+                },
+                .mem_calc_no_disp => {
+                    return 8 + getEAClocks(inst.operand2.?);
+                },
+                .mem_calc_with_disp => {
+                    return 69;
+                },
+                .direct_address => {
+                    return 8 + getEAClocks(inst.operand2.?);
+                },
+                else => {
+                    return 0;
+                }
+            }
+        },
+        else => {
+        }
+    }
+    return 0;
+}
+
+fn getClocks(inst: Instruction) usize {
+    var result: usize = 0;
+
+    switch (inst.opcode) {
+        .mov => {
+            result = getMovClocks(inst);
+        },
+        else => {}
+    }
+
+    return result;
+}
+
+pub fn printInstruction(allocator: Allocator, inst: Instruction, show_clocks: bool) !void {
     const stdout = std.io.getStdOut().writer();
     const inst_str = try bufPrintInstruction(allocator, inst);
-    try stdout.print("{s}", .{inst_str});
+
+    if (show_clocks) {
+        const clocks = getClocks(inst);
+        try stdout.print("{s} ; Clocks = {d}", .{inst_str, clocks});
+    } else {
+        try stdout.print("{s}", .{inst_str});
+    }
 }
 
 pub fn printHeader(file_name: []const u8) !void {
@@ -155,11 +208,11 @@ pub fn printHeader(file_name: []const u8) !void {
     try stdout.print("bits 16\n\n", .{});
 }
 
-pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction) !void {
+pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction, show_clocks: bool) !void {
     const stdout = std.io.getStdOut().writer();
     try printHeader(file_name);
     for (insts) |inst| {
-        try printInstruction(allocator, inst);
+        try printInstruction(allocator, inst, show_clocks);
         try stdout.print("\n", .{});
     }
 }
@@ -190,10 +243,8 @@ test "print memory calculation" {
         },
         .operand2 = .{
             .mem_calc_no_disp = .{
-                .mem_calc = .{
-                    .register1 = Register.bx,
-                    .register2 = Register.si,
-                },
+                .register1 = Register.bx,
+                .register2 = Register.si,
             },
         },
     };
@@ -293,10 +344,8 @@ test "print destination mem calc with explicit byte size in source" {
         .opcode = Opcode.mov,
         .operand1 = .{
             .mem_calc_no_disp = .{
-                .mem_calc = .{
-                    .register1 = Register.bp,
-                    .register2 = Register.di,
-                },
+                .register1 = Register.bp,
+                .register2 = Register.di,
             },
         },
         .operand2 = .{

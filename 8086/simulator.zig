@@ -16,10 +16,13 @@ pub fn main() !void {
 
     var file_name: []u8 = undefined;
     var should_dump = false;
+    var show_clocks = false;
 
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--dump")) {
             should_dump = true;
+        } else if (std.mem.eql(u8, arg, "--showClocks")) {
+            show_clocks = true;
         } else {
             file_name = arg;
         }
@@ -33,12 +36,11 @@ pub fn main() !void {
     const instructions = try decoder.decode(arena.allocator(), &buffer, bytes_read, 0);
 
     if (instructions) |insts| {
-        try printer.printListing(arena.allocator(), file_name, insts);
+        try printer.printListing(arena.allocator(), file_name, insts, show_clocks);
         try cpu.execInstrucitons(insts);
         try register_store.printStatus();
         try register_store.printIP();
         try flags.printStatus();
-        try memory.printStatus(256, 300);
     }
 
     if (should_dump) {

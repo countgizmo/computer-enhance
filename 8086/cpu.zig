@@ -72,16 +72,9 @@ fn movToRegister(destination: Register, source: Operand) void {
         .direct_address => |address| {
             writeFromAddressToRegister(destination, address);
         },
-        .mem_calc_no_disp => |mem_calc_no_disp| {
-            switch (mem_calc_no_disp) {
-                .mem_calc => |calc| {
-                    const address = calculateAddress(calc); 
-                    writeFromAddressToRegister(destination, address);
-                },
-                .direct_address => |address| {
-                    writeFromAddressToRegister(destination, address);
-                }
-            }
+        .mem_calc_no_disp => |calc_no_disp| {
+            const address = calculateAddress(calc_no_disp.register1, calc_no_disp.register2); 
+            writeFromAddressToRegister(destination, address);
         },
         else => {
             return;
@@ -117,31 +110,40 @@ fn movToDirectAddress(address: u16, source: Operand) void {
     }
 }
 
-fn calculateAddress(calc: instruction.MemCalc) u16 {
-    var address = register_store.read(calc.register1);
+fn calculateAddress(register1: Register, register2: ?Register) u16 {
+    var address = register_store.read(register1);
 
-    if (calc.register2) |reg2| {
+    if (register2) |reg2| {
         address += register_store.read(reg2);
     }
 
-    if (calc.disp) |disp| {
-        switch (disp) {
-            .byte => |byte_disp| {
-                const result = @bitCast(i16, address) + @bitCast(i8, byte_disp);
-                address = @bitCast(u16, result);
-            },
-            .word => |word_disp| {
-                const result = @bitCast(i16, address) + @bitCast(i16, word_disp);
-                address = @bitCast(u16, result);
-            }
+    return address;
+}
+
+fn calculateAddressWithDisp(calc: instruction.MemCalcWithDisp) u16 {
+    var address = calculateAddress(calc.register1, calc.register2);
+
+    switch (calc.disp) {
+        .byte => |byte_disp| {
+            const result = @bitCast(i16, address) + @bitCast(i8, byte_disp);
+            address = @bitCast(u16, result);
+        },
+        .word => |word_disp| {
+            const result = @bitCast(i16, address) + @bitCast(i16, word_disp);
+            address = @bitCast(u16, result);
         }
     }
 
     return address;
 }
 
-fn movToAddressWithDisplacement(calc: instruction.MemCalc, source: Operand) void {
-    const address = calculateAddress(calc); 
+fn movToAddressWithDisplacement(calc: instruction.MemCalcWithDisp, source: Operand) void {
+    const address = calculateAddressWithDisp(calc); 
+    return movToDirectAddress(address, source);
+}
+
+fn movToAddressNoDisplacement(calc: instruction.MemCalcNoDisp, source: Operand) void {
+    const address = calculateAddress(calc.register1, calc.register2); 
     return movToDirectAddress(address, source);
 }
 
@@ -157,15 +159,8 @@ fn execMov(inst: Instruction) !void {
         .direct_address => |address| {
             return movToDirectAddress(address, inst.operand2.?);
         },
-        .mem_calc_no_disp => |mem_calc_no_disp| {
-            switch (mem_calc_no_disp) {
-                .mem_calc => |calc| {
-                    return movToAddressWithDisplacement(calc, inst.operand2.?);
-                },
-                .direct_address => |address| {
-                    return movToDirectAddress(address, inst.operand2.?);
-                }
-            }
+        .mem_calc_no_disp => |calc_no_disp| {
+            return movToAddressNoDisplacement(calc_no_disp, inst.operand2.?);
         },
         .mem_calc_with_disp => |calc| {
             return movToAddressWithDisplacement(calc, inst.operand2.?);
@@ -253,16 +248,9 @@ fn addToRegister(destination: Register, source: Operand) void {
         .immediate => |immediate| {
             src = immediate.value;
         },
-        .mem_calc_no_disp => |mem_calc_no_disp| {
-            switch (mem_calc_no_disp) {
-                .mem_calc => |calc| {
-                    const address = calculateAddress(calc); 
-                    src = readWordFromMemory(address);
-                },
-                .direct_address => |address| {
-                    src = readWordFromMemory(address);
-                }
-            }
+        .mem_calc_no_disp => |calc_no_disp| {
+            const address = calculateAddress(calc_no_disp.register1, calc_no_disp.register2); 
+            src = readWordFromMemory(address);
         },
         else => {
             return;
