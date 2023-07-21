@@ -141,6 +141,27 @@ fn getEAClocks(operand: Operand) usize {
         .direct_address => {
             return 6;
         },
+        .mem_calc_no_disp => {
+            return 5;
+        },
+        .mem_calc_with_disp => |calc| {
+            switch (calc.disp) {
+                .byte => |val| {
+                    if (val == 0) {
+                        return 5;
+                    } else {
+                        return 9;
+                    }
+                },
+                .word => |val| {
+                    if (val == 0) {
+                        return 5;
+                    } else {
+                        return 9;
+                    }
+                }
+            }
+        },
         else => {}
     }
 
@@ -161,7 +182,7 @@ fn getMovClocks(inst: Instruction) usize {
                     return 8 + getEAClocks(inst.operand2.?);
                 },
                 .mem_calc_with_disp => {
-                    return 69;
+                    return 8 + getEAClocks(inst.operand2.?);
                 },
                 .direct_address => {
                     return 8 + getEAClocks(inst.operand2.?);
