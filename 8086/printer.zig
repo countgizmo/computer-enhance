@@ -136,91 +136,11 @@ fn bufPrintInstruction(allocator: Allocator, inst: Instruction) ![]u8 {
     return &.{};
 }
 
-fn getEAClocks(operand: Operand) usize {
-    switch (operand) {
-        .direct_address => {
-            return 6;
-        },
-        .mem_calc_no_disp => {
-            return 5;
-        },
-        .mem_calc_with_disp => |calc| {
-            switch (calc.disp) {
-                .byte => |val| {
-                    if (val == 0) {
-                        return 5;
-                    } else {
-                        return 9;
-                    }
-                },
-                .word => |val| {
-                    if (val == 0) {
-                        return 5;
-                    } else {
-                        return 9;
-                    }
-                }
-            }
-        },
-        else => {}
-    }
-
-    return 0;
-}
-
-fn getMovClocks(inst: Instruction) usize {
-    switch(inst.operand1) {
-        .register => {
-            switch(inst.operand2.?) {
-                .register => {
-                    return 2;
-                },
-                .immediate => {
-                    return 4;
-                },
-                .mem_calc_no_disp => {
-                    return 8 + getEAClocks(inst.operand2.?);
-                },
-                .mem_calc_with_disp => {
-                    return 8 + getEAClocks(inst.operand2.?);
-                },
-                .direct_address => {
-                    return 8 + getEAClocks(inst.operand2.?);
-                },
-                else => {
-                    return 0;
-                }
-            }
-        },
-        else => {
-        }
-    }
-    return 0;
-}
-
-fn getClocks(inst: Instruction) usize {
-    var result: usize = 0;
-
-    switch (inst.opcode) {
-        .mov => {
-            result = getMovClocks(inst);
-        },
-        else => {}
-    }
-
-    return result;
-}
-
-pub fn printInstruction(allocator: Allocator, inst: Instruction, show_clocks: bool) !void {
+pub fn printInstruction(allocator: Allocator, inst: Instruction) !void {
     const stdout = std.io.getStdOut().writer();
     const inst_str = try bufPrintInstruction(allocator, inst);
 
-    if (show_clocks) {
-        const clocks = getClocks(inst);
-        try stdout.print("{s} ; Clocks = {d}", .{inst_str, clocks});
-    } else {
-        try stdout.print("{s}", .{inst_str});
-    }
+    try stdout.print("{s}", .{inst_str});
 }
 
 pub fn printHeader(file_name: []const u8) !void {
@@ -229,11 +149,11 @@ pub fn printHeader(file_name: []const u8) !void {
     try stdout.print("bits 16\n\n", .{});
 }
 
-pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction, show_clocks: bool) !void {
+pub fn printListing(allocator: Allocator, file_name: []const u8, insts: []Instruction) !void {
     const stdout = std.io.getStdOut().writer();
     try printHeader(file_name);
     for (insts) |inst| {
-        try printInstruction(allocator, inst, show_clocks);
+        try printInstruction(allocator, inst);
         try stdout.print("\n", .{});
     }
 }
