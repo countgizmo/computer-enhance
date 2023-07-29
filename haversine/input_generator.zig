@@ -66,16 +66,6 @@ fn generateCoordinateUniform(random: Random) Coordinates {
     return coords;
 }
 
-fn randomPairUniformAsString(allocator: Allocator, random: Random, last_pair: bool) ![]u8 {
-    const coords0 = generateCoordinateUniform(random);
-    const coords1 = generateCoordinateUniform(random);
-    const separator = if (last_pair) "\n" else ",\n";
-
-    return try fmt.allocPrint(allocator, "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}", 
-    .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
-}
-
-
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer _ = arena.deinit();
@@ -93,7 +83,9 @@ pub fn main() !void {
     const file = try std.fs.cwd().createFile(args.file_name, .{});
     defer file.close();
 
-    _ = try file.write("{\"pairs\":[\n");
+    var b_writer = std.io.bufferedWriter(file.writer());
+    var writer = b_writer.writer();
+    _ = try writer.write("{\"pairs\":[\n");
 
     var prng = std.rand.DefaultPrng.init(args.seed);
     const random = prng.random();
@@ -101,9 +93,18 @@ pub fn main() !void {
     var i: usize = 0;
     while (i < args.pairs) : (i += 1) {
         const last_pair = (i == args.pairs - 1);
-        const pair = try randomPairUniformAsString(arena.allocator(), random, last_pair);
-        try file.writeAll(pair);
+        const coords0 = generateCoordinateUniform(random);
+        const coords1 = generateCoordinateUniform(random);
+        const separator = if (last_pair) "\n" else ",\n";
+
+        var buf: [128]u8 = undefined;
+        _ = try std.fmt.bufPrint(
+                &buf,
+                "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}", 
+                .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
+        _ = try writer.write(&buf);
     }
 
-    _ = try file.write("]}");
+    _ = try b_writer.write("]}");
+    try b_writer.flush();
 }
