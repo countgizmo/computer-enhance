@@ -9,8 +9,8 @@ const GeneratorError = error {
 };
 
 const Coordinates = struct {
-    x: i16,
-    y: i16,
+    x: f64,
+    y: f64,
 };
 
 const Args = struct {
@@ -52,19 +52,27 @@ fn parseArgs(raw_args: [][:0]u8) !Args {
     return result;
 }
 
+fn generateRandomInRange(random: Random, lo: i16, hi: i16) f64 {
+    var temp: f64 = random.float(f64);
+
+    return temp + @intToFloat(f64, random.intRangeAtMost(i16, lo, hi));
+}
+
 fn generateCoordinateUniform(random: Random) Coordinates {
     var coords = Coordinates {
-        .x = random.intRangeAtMost(i16, -180, 180),
-        .y = random.intRangeAtMost(i16, -90, 90),
+        .x = generateRandomInRange(random, -180, 180),
+        .y = generateRandomInRange(random, -90, 90),
     };
     return coords;
 }
 
-fn randomPairUniformAsString(allocator: Allocator, random: Random) ![]u8 {
+fn randomPairUniformAsString(allocator: Allocator, random: Random, last_pair: bool) ![]u8 {
     const coords0 = generateCoordinateUniform(random);
     const coords1 = generateCoordinateUniform(random);
-    return try fmt.allocPrint(allocator, "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}\n", 
-    .{ coords0.x, coords0.y, coords1.x, coords1.y });
+    const separator = if (last_pair) "\n" else ",\n";
+
+    return try fmt.allocPrint(allocator, "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}", 
+    .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
 }
 
 
@@ -92,8 +100,9 @@ pub fn main() !void {
 
     var i: usize = 0;
     while (i < args.pairs) : (i += 1) {
-        const pair = try randomPairUniformAsString(arena.allocator(), random);
-        _ = try file.write(pair);
+        const last_pair = (i == args.pairs - 1);
+        const pair = try randomPairUniformAsString(arena.allocator(), random, last_pair);
+        try file.writeAll(pair);
     }
 
     _ = try file.write("]}");
