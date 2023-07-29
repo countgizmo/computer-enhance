@@ -45,3 +45,6 @@ My CPU can put pixel data into memory.
 
 <img width="1212" alt="image" src="https://github.com/countgizmo/computer-enhance/assets/926908/acca1a21-38ed-4dc8-956f-130a32de5c77">
 
+### Haversine
+
+Researching performance aware programming using Haversine Distance calculations.
