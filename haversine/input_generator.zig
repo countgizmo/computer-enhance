@@ -108,3 +108,10 @@ pub fn main() !void {
     _ = try b_writer.write("]}");
     try b_writer.flush();
 }
+
+test "saving and reading binary file" {
+    const file = try std.fs.cwd().createFile("test.bin", .{});
+    defer file.close();
+    file.write(@as([]u8, 10.1));
+
+}

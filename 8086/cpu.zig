@@ -39,13 +39,13 @@ fn cmp(a: u16, b: u16) void {
 }
 
 fn sub(a: u16, b: u16) u16 {
-    const result: i16 = @bitCast(i16, a) - @bitCast(i16, b);
-    return @bitCast(u16, result);
+    const result: i16 = @as(i16, @bitCast(a)) - @as(i16, @bitCast(b));
+    return @as(u16, @bitCast(result));
 }
 
 fn add(a: u16, b: u16) u16 {
-    const result: i16 = @bitCast(i16, a) + @bitCast(i16, b);
-    return @bitCast(u16, result);
+    const result: i16 = @as(i16, @bitCast(a)) + @as(i16, @bitCast(b));
+    return @as(u16, @bitCast(result));
 }
 
 fn readWordFromMemory(address: u16) u16 {
@@ -125,12 +125,12 @@ fn calculateAddressWithDisp(calc: instruction.MemCalcWithDisp) u16 {
 
     switch (calc.disp) {
         .byte => |byte_disp| {
-            const result = @bitCast(i16, address) + @bitCast(i8, byte_disp);
-            address = @bitCast(u16, result);
+            const result = @as(i16, @bitCast(address)) + @as(i8, @bitCast(byte_disp));
+            address = @as(u16, @bitCast(result));
         },
         .word => |word_disp| {
-            const result = @bitCast(i16, address) + @bitCast(i16, word_disp);
-            address = @bitCast(u16, result);
+            const result = @as(i16, @bitCast(address)) + @as(i16, @bitCast(word_disp));
+            address = @as(u16, @bitCast(result));
         }
     }
 
@@ -281,8 +281,8 @@ fn execJneJnz(inst: Instruction) !void {
     const zf = flags.getFlag(.zf);
     const ip = register_store.readIP();
     if (zf != 1) {
-        const new_ip = @bitCast(i16, ip) + @intCast(i16, inst.operand1.signed_inc_to_ip);
-        register_store.writeIP(@bitCast(u16, new_ip));
+        const new_ip = @as(i16, @bitCast(ip)) + @as(i16, @intCast(inst.operand1.signed_inc_to_ip));
+        register_store.writeIP(@as(u16, @bitCast(new_ip)));
     }
 }
 
@@ -451,7 +451,7 @@ test "subtracting two registers with negative result" {
             .register = .bx,
         },
         .operand2 = .{
-            .immediate = .{ .value = @bitCast(u16, immediate1) },
+            .immediate = .{ .value = @as(u16, @bitCast(immediate1)) },
         },
     };
 
@@ -484,7 +484,7 @@ test "subtracting two registers with negative result" {
 
     const result = register_store.read(.bx);
 
-    try expect(@bitCast(i16, result) == -7934);
+    try expect(@as(i16, @bitCast(result)) == -7934);
     try expect(flags.getFlag(.sf) == 1);
     try expect(flags.getFlag(.zf) == 0);
 }
@@ -529,7 +529,7 @@ test "subtracting two registers with zero result" {
 
     const result = register_store.read(.bx);
 
-    try expect(@bitCast(i16, result) == 0);
+    try expect(@as(i16, @bitCast(result)) == 0);
     try expect(flags.getFlag(.sf) == 0);
     try expect(flags.getFlag(.zf) == 1);
 }
@@ -542,7 +542,7 @@ test "comparing flow" {
             .register = .bx,
         },
         .operand2 = .{
-            .immediate = .{ .value = @bitCast(u16, immediate1) },
+            .immediate = .{ .value = @as(u16, @bitCast(immediate1)) },
         },
         .size = 2,
     };
@@ -618,7 +618,7 @@ test "comparing flow" {
 
     const result = register_store.read(.bp);
 
-    try expect(@bitCast(i16, result) == 999);
+    try expect(@as(i16, @bitCast(result)) == 999);
     try expect(flags.getFlag(.sf) == 0);
     try expect(flags.getFlag(.zf) == 0);
 }
@@ -631,7 +631,7 @@ test "get instruction by IP" {
             .register = .bx,
         },
         .operand2 = .{
-            .immediate = .{ .value = @bitCast(u16, immediate1) },
+            .immediate = .{ .value = @as(u16, @bitCast(immediate1)) },
         },
         .size = 2,
     };

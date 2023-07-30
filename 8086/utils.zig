@@ -4,7 +4,7 @@ const log = std.log;
 
 // Keeps the low 8 bits, throws away the rest.
 pub fn u16ToU8(value: u16) u8 {
-    return @intCast(u8, value & 0b11111111);
+    return @as(u8, @intCast(value & 0b11111111));
 }
 
 const LoHiBytes = struct{u8, u8};
@@ -14,14 +14,14 @@ const LoHiBytes = struct{u8, u8};
 // Hi - second 8 bits
 // Returns a tubple.
 pub fn splitU16(value: u16) LoHiBytes {
-    const low_part = @intCast(u8, value & 0b11111111);
-    const hi_part = @intCast(u8, value >> 8);
+    const low_part = @as(u8, @intCast(value & 0b11111111));
+    const hi_part = @as(u8, @intCast(value >> 8));
 
     return .{low_part, hi_part};
 }
 
 pub fn combineU8(lo: u8, hi: u8) u16 {
-    return (@intCast(u16, hi) * 256) + lo;
+    return (@as(u16, @intCast(hi)) * 256) + lo;
 }
 
 test "combine two u8" {

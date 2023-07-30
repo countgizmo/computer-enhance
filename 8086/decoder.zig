@@ -55,7 +55,7 @@ fn isNumber(ch: u8) bool {
 }
 
 fn charToDigit(ch: u8) u8 {
-    return @intCast(u8, std.fmt.charToDigit(ch, 10) catch 0);
+    return @as(u8, @intCast(std.fmt.charToDigit(ch, 10) catch 0));
 }
 
 const Identifier = enum {
@@ -261,7 +261,7 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u8
         shift = 0;
         start_bit.* = MOST_SIGNIFICANT_BIT_IDX;
     } else {
-        start_bit.* -= @intCast(u3, size);
+        start_bit.* -= @as(u3, @intCast(size));
         shift = start_bit.* + 1;
     }
 
@@ -272,7 +272,7 @@ fn extractBits(bytes_buffer: []const u8, start_bit: *u3, offset: usize, size: u8
     if (size == 8) {
         mask = 0b11111111;
     } else {
-        mask = ((mask_base << @intCast(u3, size)) - 1);
+        mask = ((mask_base << @as(u3, @intCast(size))) - 1);
     }
     //log.warn("byte = {b} ; shifted num = {b} ; mask = {b} ; masked num = {b}", .{ current_byte, shifted_num, mask, shifted_num & mask });
 
@@ -304,7 +304,7 @@ fn getRegisterOperand(decoding: Decoding, op_position: OperandPosition) instruct
     }
 
     return .{
-        .register = @intToEnum(Register, register_idx),
+        .register = @enumFromInt(register_idx),
     };
 }
 
@@ -322,7 +322,7 @@ fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Ope
                 .register1 = mem_calc.register1,
                 .register2 = mem_calc.register2,
                 .disp = .{
-                    .byte = @bitCast(i8, decoding.disp_lo.?),
+                    .byte = @as(i8, @bitCast(decoding.disp_lo.?)),
                 }
             },
         };
@@ -336,7 +336,7 @@ fn getAddressCalculationOperand(decoding: Decoding) DecoderError!instruction.Ope
                 .register1 = mem_calc.register1,
                 .register2 = mem_calc.register2,
                 .disp = .{
-                    .word = @bitCast(i16, word),
+                    .word = @as(i16, @bitCast(word)),
                 }
             },
         };
@@ -355,7 +355,7 @@ fn getDataOperand(decoding: Decoding) !instruction.Operand {
             };
         } else {
             operand = .{
-                .immediate = .{ .value = @bitCast(u8, data_lo) },
+                .immediate = .{ .value = @as(u8, @bitCast(data_lo)) },
             };
         }
 
@@ -437,7 +437,7 @@ fn decodeRegMemToFromRegMem(decoding: Decoding, op_position: OperandPosition) !?
 
     const register_idx: u8 = if (decoding.w == 1) decoding.reg + 8 else decoding.reg;
     return .{
-        .register = @intToEnum(Register, register_idx),
+        .register = @enumFromInt(register_idx),
     };
 }
 
@@ -635,7 +635,7 @@ fn decodeInstruction(buffer: []const u8, offset: u16, encoding: Encoding) !?inst
                     decoding.pad = bit_value;
                 },
                 .ip_inc => {
-                    decoding.ip_inc = @bitCast(i8, bit_value);
+                    decoding.ip_inc = @as(i8, @bitCast(bit_value));
                 },
                 else => {},
             }

@@ -12,11 +12,11 @@ pub fn resetFlags() void {
 }
 
 pub fn setFlag(flag: Flag, value: u2) void {
-    flags[@enumToInt(flag)] = value;
+    flags[@intFromEnum(flag)] = value;
 }
 
 pub fn getFlag(flag: Flag) u2 {
-    return flags[@enumToInt(flag)];
+    return flags[@intFromEnum(flag)];
 }
 
 pub fn printStatus() !void {
@@ -26,7 +26,7 @@ pub fn printStatus() !void {
     const display_flags = [_]Flag{.zf, .sf};
     for (display_flags) |flag| {
         try stdout.print("{s}: {d}\n",
-            .{@tagName(flag), flags[@enumToInt(flag)]});
+            .{@tagName(flag), flags[@intFromEnum(flag)]});
     }
 
     try stdout.print("=================\n", .{});
