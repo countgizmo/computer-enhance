@@ -55,7 +55,7 @@ fn parseArgs(raw_args: [][:0]u8) !Args {
 fn generateRandomInRange(random: Random, lo: i16, hi: i16) f64 {
     var temp: f64 = random.float(f64);
 
-    return temp + @intToFloat(f64, random.intRangeAtMost(i16, lo, hi));
+    return temp + @as(f64, @floatFromInt(random.intRangeAtMost(i16, lo, hi)));
 }
 
 fn generateCoordinateUniform(random: Random) Coordinates {
