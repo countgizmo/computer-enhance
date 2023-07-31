@@ -3,6 +3,7 @@ const fmt = std.fmt;
 const log = std.log;
 const Allocator = std.mem.Allocator;
 const Random = std.rand.Random;
+const haversine_formula = @import("haversine_formula.zig");
 
 const GeneratorError = error {
     InvalidNumberOfArgs,
@@ -90,12 +91,16 @@ pub fn main() !void {
     var prng = std.rand.DefaultPrng.init(args.seed);
     const random = prng.random();
 
+    var sum: f64 = 0;
     var i: usize = 0;
     while (i < args.pairs) : (i += 1) {
         const last_pair = (i == args.pairs - 1);
         const coords0 = generateCoordinateUniform(random);
         const coords1 = generateCoordinateUniform(random);
         const separator = if (last_pair) "\n" else ",\n";
+
+        const h = haversine_formula.referenceHaversine(coords0.x, coords0.y, coords1.x, coords1.y, 6372.8);
+        sum += h;
 
         var buf: [128]u8 = undefined;
         _ = try std.fmt.bufPrint(
@@ -107,6 +112,10 @@ pub fn main() !void {
 
     _ = try b_writer.write("]}");
     try b_writer.flush();
+
+    const avg = sum / @as(f64, @floatFromInt(args.pairs));
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Avg Haversine: {d}\n", .{avg});
 }
 
 test "saving and reading binary file" {
