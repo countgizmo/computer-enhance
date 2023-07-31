@@ -117,10 +117,3 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Avg Haversine: {d}\n", .{avg});
 }
-
-test "saving and reading binary file" {
-    const file = try std.fs.cwd().createFile("test.bin", .{});
-    defer file.close();
-    file.write(@as([]u8, 10.1));
-
-}
