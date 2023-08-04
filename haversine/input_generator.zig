@@ -20,6 +20,22 @@ const Quadrant = struct {
     center: Coordinates,
     width: u16,
     height: u16,
+
+    pub fn getStartX(self: Quadrant) f64 {
+        return self.center.x - @as(f64, @floatFromInt(self.width / 2));
+    }
+
+    pub fn getStartY(self: Quadrant) f64 {
+        return self.center.y + @as(f64, @floatFromInt(self.height / 2));
+    }
+
+    pub fn getEndX(self: Quadrant) f64 {
+        return self.center.x + @as(f64, @floatFromInt(self.width / 2));
+    }
+
+    pub fn getEndY(self: Quadrant) f64 {
+        return self.center.y - @as(f64, @floatFromInt(self.height / 2));
+    }
 };
 
 const Args = struct {
@@ -151,8 +167,6 @@ test "generating random quadrants" {
     var prng = std.rand.DefaultPrng.init(12345);
     const random = prng.random();
     const quadrants = generateQuadrants(random, 4, -180, -90, 180, 90);
-    log.warn("quadrants = {any}", .{quadrants});
-
 
     try expect(quadrants.len == 4);
 
@@ -162,4 +176,22 @@ test "generating random quadrants" {
         try expect(quadrant.center.x < 180 and quadrant.center.x > -180 and
                    quadrant.center.y < 90 and quadrant.center.y > -90);
     }
+}
+
+test "quadrant calculations" {
+    var quadrant = Quadrant{
+        .center = .{
+            .x = -10.0,
+            .y = 45.0,
+        },
+        .width = 90,
+        .height = 45,
+    };
+
+    log.warn("{d}", .{quadrant.getStartY()});
+    try expect(quadrant.getStartX() == -55);
+    try expect(quadrant.getStartY() == 67);
+
+    try expect(quadrant.getEndX() == 35);
+    try expect(quadrant.getEndY() == 23);
 }
