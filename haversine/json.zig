@@ -6,10 +6,20 @@ const StringHashMap = std.StringHashMap;
 const log = std.log;
 
 const Parser = struct {
-    current_position: usize = 0,
-    next_position: usize = 0,
+    const Self = @This();
 
-    fn parseFloat(self: *Parser, buf: []u8) !f64 {
+    next_position: usize = 0,
+    allocator: Allocator,
+
+    fn init(allocator: Allocator) Self {
+        return .{
+            .allocator = allocator,
+        };
+    }
+
+    fn parseFloat(self: *Self, buf: []u8) !f64 {
+        const current_position = self.next_position;
+        log.warn("parsing float {s}", .{buf[current_position..]});
         while (isNumber(buf[self.next_position])) {
             self.next_position += 1;
             if (self.next_position == buf.len) {
@@ -17,29 +27,29 @@ const Parser = struct {
             }
         }
 
-        const result = std.fmt.parseFloat(f64, buf[self.current_position..self.next_position]); 
-        self.current_position = self.next_position;
+        return std.fmt.parseFloat(f64, buf[current_position..self.next_position]); 
+    }
 
+    fn parseString(self: *Self, buf: []u8) []u8 {
+        self.next_position += 1; //opening quotes
+        const current_position = self.next_position;
+
+        while (buf[self.next_position] != '"') {
+            self.next_position += 1;
+        }
+
+        const result = buf[current_position..self.next_position];
+        self.next_position += 1; //closing quotes
         return result;
     }
 
-    fn parseString(buf: []u8, offset: usize) []u8 {
-        var result: []u8 = undefined;
-        _ = offset;
-        _ = buf;
-
-        return result;
-    }
-
-    fn parseMap(self: *Parser, allocator: Allocator, buf: []u8, offset: usize) !StringHashMap(JsonValue) {
+    fn parseMap(self: *Self, allocator: Allocator, buf: []u8) !StringHashMap(JsonValue) {
         var map = StringHashMap(JsonValue).init(allocator);
         var key: []u8 = undefined;
-        var current_offset = offset;
 
-        for (buf[offset..], 0..) |ch, idx| {
-            current_offset = offset + idx;
+        for (buf[self.next_position..]) |ch| {
             if (ch == '"') {
-                key = parseString(buf, current_offset);
+                key = self.parseString(buf);
             }
 
             if (isNumber(ch)) {
@@ -66,6 +76,7 @@ const JsonValue = union(enum) {
 };
 
 fn isNumber(ch: u8) bool {
+    log.warn("checking {c}", .{ch});
     return (ch == '-') or 
            (ch == '.') or
            (ch >= '0' and ch <= '9');
@@ -98,21 +109,31 @@ test "parse file" {
 }
 
 test "parse float" {
-    var parser = Parser{};
-    var data = "-123998.12".*;
+    var allocator = std.testing.allocator;
+    var parser = Parser.init(allocator);
+    var data = "-123998.12;".*;
     const data_slice: []u8 = &data;
 
     const result = try parser.parseFloat(data_slice);
     try expect(result == -123998.12);
 }
 
+test "parse string" {
+    var allocator = std.testing.allocator;
+    var parser = Parser.init(allocator);
+    var data = "\"potato\"".*;
+    const data_slice: []u8 = &data;
+
+    const result = parser.parseString(data_slice);
+    try expect(std.mem.eql(u8, result, "potato"));
+}
 
 test "parse map" {
     var allocator = std.testing.allocator;
     var raw_json = "{\"pairs\": 23.987987}".*;
     const json_buf: []u8 = &raw_json;
-    var parser = Parser{};
-    var json = parser.parseMap(allocator, json_buf, 0) catch undefined;
+    var parser = Parser.init(allocator);
+    var json = parser.parseMap(allocator, json_buf) catch undefined;
     defer json.deinit();
 
     log.warn("{d}", .{json.get("pairs").?.float});
