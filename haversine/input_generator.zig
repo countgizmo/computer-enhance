@@ -190,11 +190,11 @@ pub fn main() !void {
         sum += h;
 
         var buf: [128]u8 = undefined;
-        _ = try std.fmt.bufPrint(
+        var line = try std.fmt.bufPrint(
                 &buf,
                 "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}", 
                 .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
-        _ = try writer.write(&buf);
+        _ = try writer.write(line);
     }
 
     _ = try b_writer.write("]}");
