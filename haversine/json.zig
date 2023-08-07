@@ -90,9 +90,9 @@ pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(Jso
 }
 
 
-test "parse" {
+test "parse file" {
     var allocator = std.testing.allocator;
-    var file_name = "test.json";
+    var file_name = "data/cluster_10.json";
     const json = parseFile(allocator, file_name) catch undefined;
     try expect(json.count() == 0);
 }
