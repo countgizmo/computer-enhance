@@ -17,14 +17,12 @@ const Parser = struct {
         };
     }
 
-    fn parseFloat(self: *Self, buf: []u8) !f64 {
+    pub fn parseFloat(self: *Self, buf: []u8) !f64 {
         const current_position = self.next_position;
-        log.warn("parsing float {s}", .{buf[current_position..]});
-        while (isNumber(buf[self.next_position])) {
+        var ch = buf[self.next_position];
+        while (self.next_position < buf.len and isNumber(ch)) {
             self.next_position += 1;
-            if (self.next_position == buf.len) {
-                break;
-            }
+            ch = buf[self.next_position];
         }
 
         return std.fmt.parseFloat(f64, buf[current_position..self.next_position]); 
@@ -46,19 +44,28 @@ const Parser = struct {
     fn parseMap(self: *Self, allocator: Allocator, buf: []u8) !StringHashMap(JsonValue) {
         var map = StringHashMap(JsonValue).init(allocator);
         var key: []u8 = undefined;
+        var ch: u8 = undefined;
 
-        for (buf[self.next_position..]) |ch| {
+        while (self.next_position < buf.len) {
+            ch = buf[self.next_position];
+            if (ch == '{' or ch == ':' or std.ascii.isWhitespace(ch)) {
+                self.next_position += 1;
+                continue;
+            }
+
+
             if (ch == '"') {
                 key = self.parseString(buf);
             }
 
-            if (isNumber(ch)) {
-                const number = self.parseFloat(buf) catch 0;
-                try map.put("pairs", JsonValue{ .float = number });
+            if (ch == '}') {
+                self.next_position += 1;
+                return map;
             }
 
-            if (ch == '}') {
-                return map;
+            if (isNumber(ch)) {
+                const number = self.parseFloat(buf) catch 0;
+                try map.put(key, JsonValue{ .float = number });
             }
         }
 
@@ -76,7 +83,6 @@ const JsonValue = union(enum) {
 };
 
 fn isNumber(ch: u8) bool {
-    log.warn("checking {c}", .{ch});
     return (ch == '-') or 
            (ch == '.') or
            (ch >= '0' and ch <= '9');
@@ -130,14 +136,19 @@ test "parse string" {
 
 test "parse map" {
     var allocator = std.testing.allocator;
-    var raw_json = "{\"pairs\": 23.987987}".*;
+    var raw_json = "{\"x0\": 23.987987}".*;
     const json_buf: []u8 = &raw_json;
     var parser = Parser.init(allocator);
     var json = parser.parseMap(allocator, json_buf) catch undefined;
     defer json.deinit();
 
-    log.warn("{d}", .{json.get("pairs").?.float});
-
     try expect(json.count() == 1);
-    try expect(json.get("pairs").?.float == 23.987987);
+    try expect(json.get("x0").?.float == 23.987987);
+}
+
+test "isNumber" {
+    try expect(isNumber(':') == false);
+    try expect(isNumber('2') == true);
+    try expect(isNumber('.') == true);
+    try expect(isNumber('-') == true);
 }
