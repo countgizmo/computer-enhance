@@ -41,6 +41,10 @@ const Parser = struct {
         return result;
     }
 
+    // NOTE(evgheni): This is very task specific.
+    // I know that the keys are strings and that the values are not strings (numbers).
+    // So if there's a quote it means a key is starting.
+    // This is not a generic JSON parser (just a reminder).
     fn parseMap(self: *Self, allocator: Allocator, buf: []u8) !StringHashMap(JsonValue) {
         var map = StringHashMap(JsonValue).init(allocator);
         var key: []u8 = undefined;
@@ -53,7 +57,6 @@ const Parser = struct {
                 continue;
             }
 
-
             if (ch == '"') {
                 key = self.parseString(buf);
             }
@@ -61,6 +64,10 @@ const Parser = struct {
             if (ch == '}') {
                 self.next_position += 1;
                 return map;
+            }
+
+            if (ch == ',') {
+                self.next_position += 1;
             }
 
             if (isNumber(ch)) {
@@ -144,6 +151,21 @@ test "parse map" {
 
     try expect(json.count() == 1);
     try expect(json.get("x0").?.float == 23.987987);
+}
+
+test "parse coordinates" {
+    var allocator = std.testing.allocator;
+    var raw_json = "{\"x0\":-51.01558393732917, \"y0\":62.22122012449795, \"x1\":-0.09528121685555413, \"y1\":3.2393642490821737},".*;
+    const json_buf: []u8 = &raw_json;
+    var parser = Parser.init(allocator);
+    var json = parser.parseMap(allocator, json_buf) catch undefined;
+    defer json.deinit();
+
+    try expect(json.count() == 4);
+    try expect(json.get("x0").?.float == -51.01558393732917);
+    try expect(json.get("y0").?.float == 62.22122012449795);
+    try expect(json.get("x1").?.float == -0.09528121685555413);
+    try expect(json.get("y1").?.float == 3.2393642490821737);
 }
 
 test "isNumber" {
