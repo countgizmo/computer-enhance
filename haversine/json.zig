@@ -17,6 +17,11 @@ const Parser = struct {
         };
     }
 
+    pub fn reset(self: *Self) void {
+        self.next_position = 0;
+    }
+
+
     pub fn parseFloat(self: *Self, buf: []u8) !f64 {
         const current_position = self.next_position;
         var ch = buf[self.next_position];
@@ -28,7 +33,7 @@ const Parser = struct {
         return std.fmt.parseFloat(f64, buf[current_position..self.next_position]); 
     }
 
-    fn parseString(self: *Self, buf: []u8) []u8 {
+    pub fn parseString(self: *Self, buf: []u8) []u8 {
         self.next_position += 1; //opening quotes
         const current_position = self.next_position;
 
@@ -45,7 +50,7 @@ const Parser = struct {
     // I know that the keys are strings and that the values are not strings (numbers).
     // So if there's a quote it means a key is starting.
     // This is not a generic JSON parser (just a reminder).
-    fn parseMap(self: *Self, allocator: Allocator, buf: []u8) !StringHashMap(JsonValue) {
+    pub fn parseMap(self: *Self, allocator: Allocator, buf: []u8) !StringHashMap(JsonValue) {
         var map = StringHashMap(JsonValue).init(allocator);
         var key: []u8 = undefined;
         var ch: u8 = undefined;
@@ -105,10 +110,30 @@ pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(Jso
     var buffered_reader = std.io.bufferedReader(file.reader());
     var reader = buffered_reader.reader();
 
-    var buffer: [1024]u8 = undefined;
-    var read_bytes = try reader.read(&buffer);
+    var output: [1024]u8 = undefined;
+    var output_fbs = std.io.fixedBufferStream(&output);
+    const writer = output_fbs.writer();
+    var parser = Parser.init(allocator);
 
-    log.warn("Read bytes {d}", .{read_bytes});
+    while(reader.streamUntilDelimiter(writer, '\n', null)) {
+        var b = output_fbs.getWritten();
+        output_fbs.reset();
+        if (std.mem.startsWith(u8, b, "{\"pairs\"")) {
+            continue;
+        }
+        var json = parser.parseMap(allocator, b) catch |err| {
+            log.err("Coudn't parse JSON map: {any}\n", .{err});
+            return err;
+        };
+        log.warn("parsing {s}", .{b});
+        json.deinit();
+        parser.reset();
+    } else |err| {
+        if (err != error.EndOfStream) {
+            log.err("Unexpected error while parsing file: {any}\n", .{err});
+        }
+    }
+
 
     return map;
 }

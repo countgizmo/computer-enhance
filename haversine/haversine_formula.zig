@@ -2,6 +2,8 @@ const std = @import("std");
 const expect = std.testing.expect;
 const math = std.math;
 
+const earth_radius_reference = 6371000;
+
 fn square(n: f64) f64 {
     return n * n;
 }
@@ -29,8 +31,7 @@ pub fn referenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, earth_radius: f64)
 }
 
 test "Haversine calculation" {
-    const earth_radius = 6371000;
-    const result = referenceHaversine(-0.116773, 51.510357, -77.009003, 38.889931, earth_radius);
+    const result = referenceHaversine(-0.116773, 51.510357, -77.009003, 38.889931, earth_radius_reference);
     const tolerance = 0.001;
     var diff = math.fabs(result - 5897658.289);
 
