@@ -2,7 +2,7 @@ const std = @import("std");
 const expect = std.testing.expect;
 const math = std.math;
 
-const earth_radius_reference = 6371000;
+pub const earth_radius_reference = 6371000;
 
 fn square(n: f64) f64 {
     return n * n;

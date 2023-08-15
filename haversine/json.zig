@@ -1,9 +1,27 @@
 const std = @import("std");
 const expect = std.testing.expect;
 const Allocator = std.mem.Allocator;
-const AutoHashMap = std.AutoHashMap;
 const StringHashMap = std.StringHashMap;
+const ArrayList = std.ArrayList;
 const log = std.log;
+const haversine_formula = @import("haversine_formula.zig");
+const calculator = @import("calculator.zig");
+const Coordinates = calculator.Coordinates;
+const CoordPair = calculator.CoordPair;
+
+const Result = struct {
+    const Self = @This();
+    pairs: ArrayList(CoordPair),
+    sum: f64 = 0,
+    pub fn avgHaversine(self: Self) f64 {
+        log.warn("{d} / {d}", .{self.sum, @as(f64, @floatFromInt(self.pairs.items.len))});
+        return self.sum / @as(f64, @floatFromInt(self.pairs.items.len));
+    }
+
+    pub fn deinit(self: Self) void {
+        self.pairs.deinit();
+    }
+};
 
 const Parser = struct {
     const Self = @This();
@@ -100,10 +118,10 @@ fn isNumber(ch: u8) bool {
            (ch >= '0' and ch <= '9');
 }
 
-pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(JsonValue) {
-    var map = StringHashMap(JsonValue).init(allocator);
-    defer map.deinit();
-
+pub fn parseFile(allocator: Allocator, file_name: []const u8) !Result {
+    var result = Result {
+        .pairs = ArrayList(CoordPair).init(allocator),
+    };
     const file = try std.fs.cwd().openFile(file_name, .{});
     defer file.close();
 
@@ -114,6 +132,7 @@ pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(Jso
     var output_fbs = std.io.fixedBufferStream(&output);
     const writer = output_fbs.writer();
     var parser = Parser.init(allocator);
+    var json: StringHashMap(JsonValue) = undefined;
 
     while(reader.streamUntilDelimiter(writer, '\n', null)) {
         var b = output_fbs.getWritten();
@@ -121,12 +140,28 @@ pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(Jso
         if (std.mem.startsWith(u8, b, "{\"pairs\"")) {
             continue;
         }
-        var json = parser.parseMap(allocator, b) catch |err| {
+        json = parser.parseMap(allocator, b) catch |err| {
             log.err("Coudn't parse JSON map: {any}\n", .{err});
             return err;
         };
-        log.warn("parsing {s}", .{b});
-        json.deinit();
+
+        const pair = CoordPair.init(
+            json.get("x0").?.float,
+            json.get("y0").?.float,
+            json.get("x1").?.float,
+            json.get("y1").?.float);
+        try result.pairs.append(pair);
+
+        const h = haversine_formula.referenceHaversine(
+            pair.coord1.x,
+            pair.coord1.y,
+            pair.coord2.x,
+            pair.coord2.y, 
+            haversine_formula.earth_radius_reference);
+
+        result.sum += h;
+
+        defer json.deinit();
         parser.reset();
     } else |err| {
         if (err != error.EndOfStream) {
@@ -134,16 +169,22 @@ pub fn parseFile(allocator: Allocator, file_name: []const u8) !StringHashMap(Jso
         }
     }
 
-
-    return map;
+    return result;
 }
+
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer _ = arena.deinit();
+}
+
 
 
 test "parse file" {
     var allocator = std.testing.allocator;
     var file_name = "data/cluster_10.json";
-    const json = parseFile(allocator, file_name) catch undefined;
-    try expect(json.count() == 0);
+    var result = parseFile(allocator, file_name) catch undefined;
+    defer result.deinit();
+    log.warn("Result: {d} {d} len = {d}", .{result.sum, result.avgHaversine(), result.pairs.items.len});
 }
 
 test "parse float" {

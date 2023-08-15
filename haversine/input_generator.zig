@@ -6,16 +6,13 @@ const log = std.log;
 const Allocator = std.mem.Allocator;
 const Random = std.rand.Random;
 const haversine_formula = @import("haversine_formula.zig");
+const Coordinates = @import("calculator.zig").Coordinates;
 
 const GeneratorError = error {
     InvalidNumberOfArgs,
     InvalidMethod,
 };
 
-const Coordinates = struct {
-    x: f64,
-    y: f64,
-};
 
 const Quadrant = struct {
     center: Coordinates,
@@ -53,7 +50,11 @@ const Args = struct {
 
 fn usage() !void {
     const stdout = std.io.getStdOut().writer();
-    try stdout.print("Usage: zig run input_generator -- --method cluster/uniform --pairs <number> --file <file name> --seed <number>\n", .{});
+    try stdout.print("Usage: zig run input_generator --", .{});
+    try stdout.print(" --method cluster/uniform", .{});
+    try stdout.print(" --pairs <number>", .{});
+    try stdout.print(" --file <file name>", .{});
+    try stdout.print(" --seed <number>\n", .{});
 }
 
 fn methodFromString(method_str: []u8) !Method {
