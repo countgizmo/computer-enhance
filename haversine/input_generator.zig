@@ -146,6 +146,24 @@ fn generateCoordinateFromQuadrants(random: Random, quadrants: []Quadrant) Coordi
     return coords;
 }
 
+fn geneareCoordinates(random: Random, method: Method, quadrants: []Quadrant) Coordinates {
+    const coords = switch (method) {
+        .uniform => generateCoordinateUniform(random),
+        .cluster => generateCoordinateFromQuadrants(random, quadrants),
+    };
+
+    return coords;
+}
+
+fn jsonLine(coords0: Coordinates, coords1: Coordinates, separator: []const u8) ![]u8 {
+    var buf: [128]u8 = undefined;
+    var line = try std.fmt.bufPrint(
+        &buf,
+        "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}",
+        .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
+
+    return line;
+}
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -165,8 +183,8 @@ pub fn main() !void {
     defer file.close();
 
     var b_writer = std.io.bufferedWriter(file.writer());
-    var writer = b_writer.writer();
-    _ = try writer.write("{\"pairs\":[\n");
+    var json_writer = b_writer.writer();
+    _ = try json_writer.write("{\"pairs\":[\n");
 
     var prng = std.rand.DefaultPrng.init(args.seed);
     const random = prng.random();
@@ -176,26 +194,15 @@ pub fn main() !void {
     var quadrants = generateQuadrants(random, 4, -180, -90, 180, 90);
 
     while (i < args.pairs) : (i += 1) {
-        const last_pair = (i == args.pairs - 1);
-        const coords0 = switch (args.method) {
-            .uniform => generateCoordinateUniform(random),
-            .cluster => generateCoordinateFromQuadrants(random, &quadrants),
-        };
-        const coords1 = switch (args.method) {
-            .uniform => generateCoordinateUniform(random),
-            .cluster => generateCoordinateFromQuadrants(random, &quadrants),
-        };
-        const separator = if (last_pair) "\n" else ",\n";
+        const separator = if (i == args.pairs - 1) "\n" else ",\n";
+        const coords0 = geneareCoordinates(random, args.method, &quadrants);
+        const coords1 = geneareCoordinates(random, args.method, &quadrants);
 
         const h = haversine_formula.referenceHaversine(coords0.x, coords0.y, coords1.x, coords1.y, 6372.8);
         sum += h;
 
-        var buf: [128]u8 = undefined;
-        var line = try std.fmt.bufPrint(
-                &buf,
-                "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}", 
-                .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
-        _ = try writer.write(line);
+        const line = try jsonLine(coords0, coords1, separator);
+        _ = try json_writer.write(line);
     }
 
     _ = try b_writer.write("]}");
