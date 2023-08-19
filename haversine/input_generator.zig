@@ -3,6 +3,7 @@ const math = std.math;
 const expect = std.testing.expect;
 const fmt = std.fmt;
 const log = std.log;
+const mem = std.mem;
 const Allocator = std.mem.Allocator;
 const Random = std.rand.Random;
 const haversine_formula = @import("haversine_formula.zig");
@@ -179,10 +180,15 @@ pub fn main() !void {
 
     log.debug("args: \nmethod: {any}\npairs: {d}\nfile: {s}\nseed: {d}", .{args.method, args.pairs, args.file_name, args.seed});
 
-    const file = try std.fs.cwd().createFile(args.file_name, .{});
-    defer file.close();
+    const json_file = try std.fs.cwd().createFile(args.file_name, .{});
+    defer json_file.close();
 
-    var b_writer = std.io.bufferedWriter(file.writer());
+    const bin_file_name = try std.fmt.allocPrint(arena.allocator(), "{s}.bin", .{args.file_name});
+    defer arena.allocator().free(bin_file_name);
+    const bin_file = try std.fs.cwd().createFile(bin_file_name, .{});
+    defer bin_file.close();
+
+    var b_writer = std.io.bufferedWriter(json_file.writer());
     var json_writer = b_writer.writer();
     _ = try json_writer.write("{\"pairs\":[\n");
 
@@ -203,6 +209,16 @@ pub fn main() !void {
 
         const line = try jsonLine(coords0, coords1, separator);
         _ = try json_writer.write(line);
+
+        // TODO(evgheni): Think about adding metadata in the beginning of the file.
+        // The metadata can have number of pairs, seed. All the args to reproduce.
+        // Then we know how many entries to read an can also include the sum and avg at the end
+        // of the binary file.
+        // Or the whole thing should be a struct! A Result that contains arrays of coords, sum and avg.
+        // Then we can write the whole thing but it might be a big thing to save at once.
+        // But then maybe buffered writer can be used.
+        try bin_file.writeAll(&mem.toBytes(coords0));
+        try bin_file.writeAll(&mem.toBytes(coords1));
     }
 
     _ = try b_writer.write("]}");
