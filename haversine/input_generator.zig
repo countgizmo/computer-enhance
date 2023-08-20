@@ -156,10 +156,9 @@ fn geneareCoordinates(random: Random, method: Method, quadrants: []Quadrant) Coo
     return coords;
 }
 
-fn jsonLine(coords0: Coordinates, coords1: Coordinates, separator: []const u8) ![]u8 {
-    var buf: [128]u8 = undefined;
-    var line = try std.fmt.bufPrint(
-        &buf,
+fn jsonLine(allocator: Allocator, coords0: Coordinates, coords1: Coordinates, separator: []const u8) ![]u8 {
+    var line = try std.fmt.allocPrint(
+        allocator,
         "\t{{\"x0\":{d}, \"y0\":{d}, \"x1\":{d}, \"y1\":{d}}}{s}",
         .{ coords0.x, coords0.y, coords1.x, coords1.y, separator });
 
@@ -207,7 +206,7 @@ pub fn main() !void {
         const h = haversine_formula.referenceHaversine(coords0.x, coords0.y, coords1.x, coords1.y, 6372.8);
         sum += h;
 
-        const line = try jsonLine(coords0, coords1, separator);
+        const line = try jsonLine(arena.allocator(), coords0, coords1, separator);
         _ = try json_writer.write(line);
 
         // TODO(evgheni): Think about adding metadata in the beginning of the file.
