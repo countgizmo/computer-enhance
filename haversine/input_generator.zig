@@ -203,7 +203,12 @@ pub fn main() !void {
         const coords0 = geneareCoordinates(random, args.method, &quadrants);
         const coords1 = geneareCoordinates(random, args.method, &quadrants);
 
-        const h = haversine_formula.referenceHaversine(coords0.x, coords0.y, coords1.x, coords1.y, 6372.8);
+        const h = haversine_formula.referenceHaversine(
+            coords0.x,
+            coords0.y,
+            coords1.x,
+            coords1.y,
+            haversine_formula.earth_radius_reference);
         sum += h;
 
         const line = try jsonLine(arena.allocator(), coords0, coords1, separator);

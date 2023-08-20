@@ -14,7 +14,6 @@ const Result = struct {
     pairs: ArrayList(CoordPair),
     sum: f64 = 0,
     pub fn avgHaversine(self: Self) f64 {
-        log.warn("{d} / {d}", .{self.sum, @as(f64, @floatFromInt(self.pairs.items.len))});
         return self.sum / @as(f64, @floatFromInt(self.pairs.items.len));
     }
 
@@ -184,7 +183,7 @@ test "parse file" {
     var file_name = "data/cluster_10.json";
     var result = parseFile(allocator, file_name) catch undefined;
     defer result.deinit();
-    log.warn("Result: {d} {d} len = {d}", .{result.sum, result.avgHaversine(), result.pairs.items.len});
+    log.warn("Avg Haversine: {d}", .{result.avgHaversine()});
 }
 
 test "parse float" {
